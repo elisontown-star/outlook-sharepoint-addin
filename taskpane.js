@@ -198,7 +198,7 @@ async function archiveEmail() {
     const date      = new Date().toISOString().slice(0, 10);
     const subject   = (currentItem.subject || "sem-assunto")
       .replace(/[\\/:*?"<>|]/g, "_").substring(0, 80);
-    const fileName  = `${date}_${subject}.eml`;
+    const fileName  = `${date}_${subject}.msg`;
 
     // 3. Upload para o SharePoint
     showStatus("Enviando para o SharePoint...", "loading");
@@ -241,33 +241,87 @@ async function fetchEml(itemId) {
 async function buildEmlFromOffice() {
   const item = Office.context.mailbox.item;
 
-  const body = await new Promise((resolve, reject) => {
+  const body = await new Promise((resolve) => {
     item.body.getAsync(Office.CoercionType.Html, result => {
-      if (result.status === Office.AsyncResultStatus.Succeeded)
-        resolve(result.value);
-      else
-        resolve("(corpo não disponível)");
+      resolve(result.status === Office.AsyncResultStatus.Succeeded ? result.value : "(corpo não disponível)");
     });
   });
 
-  const from    = item.from ? item.from.emailAddress : "";
+  const from    = item.from ? `${item.from.displayName} <${item.from.emailAddress}>` : "";
   const subject = item.subject || "(sem assunto)";
   const date    = new Date().toUTCString();
+  const toList  = (item.to || []).map(r => `${r.displayName} <${r.emailAddress}>`).join(", ");
 
-  const toList = (item.to || []).map(r => `${r.displayName} <${r.emailAddress}>`).join(", ");
+  // Tenta criar .msg usando CFB
+  try {
+    if (typeof CFB !== "undefined") {
+      return buildMsgFile({ from, subject, date, toList, body });
+    }
+  } catch (e) { console.warn("CFB falhou, usando EML:", e); }
 
-  const eml = [
-    `From: ${from}`,
-    `To: ${toList}`,
-    `Subject: ${subject}`,
-    `Date: ${date}`,
-    `MIME-Version: 1.0`,
-    `Content-Type: text/html; charset=utf-8`,
-    ``,
-    body
-  ].join("\r\n");
-
+  // Fallback: EML padrão
+  const eml = [`From: ${from}`, `To: ${toList}`, `Subject: ${subject}`,
+    `Date: ${date}`, `MIME-Version: 1.0`, `Content-Type: text/html; charset=utf-8`, ``, body].join("\r\n");
   return new Blob([eml], { type: "message/rfc822" });
+}
+
+function buildMsgFile({ from, subject, date, toList, body }) {
+  // Encoder UTF-16LE para strings MAPI
+  function encodeUTF16LE(str) {
+    const buf = new ArrayBuffer((str.length + 1) * 2);
+    const view = new Uint16Array(buf);
+    for (let i = 0; i < str.length; i++) view[i] = str.charCodeAt(i);
+    view[str.length] = 0;
+    return new Uint8Array(buf);
+  }
+
+  const cfb = CFB.utils.cfb_new();
+
+  // Propriedades MAPI como streams individuais
+  const props = [
+    { tag: 0x0037, type: 0x001F, value: subject },   // PR_SUBJECT
+    { tag: 0x1000, type: 0x001F, value: body },       // PR_BODY_HTML
+    { tag: 0x0042, type: 0x001F, value: from },       // PR_SENT_REPRESENTING_NAME
+    { tag: 0x0E04, type: 0x001F, value: toList },     // PR_DISPLAY_TO
+    { tag: 0x0070, type: 0x001F, value: subject },    // PR_CONVERSATION_TOPIC
+  ];
+
+  // __properties_version1.0 — header fixo de 32 bytes + 16 bytes por prop fixa
+  const fixedProps = [
+    { tag: 0x0017, type: 0x0003, value: 0x00000000 }, // PR_IMPORTANCE = normal
+    { tag: 0x001A, type: 0x001F, skip: true },
+    { tag: 0x0026, type: 0x0003, value: 0x00000001 }, // PR_SENSITIVITY
+  ];
+
+  const headerBuf = new ArrayBuffer(32 + fixedProps.filter(p => !p.skip).length * 16);
+  const headerView = new DataView(headerBuf);
+  // Reserved + next_recip_id=0, next_attach_id=0, recip_count=0, attach_count=0
+  headerView.setUint32(8, 0, true);
+  headerView.setUint32(12, 0, true);
+  headerView.setUint32(16, 0, true);
+  headerView.setUint32(20, 0, true);
+
+  let offset = 32;
+  fixedProps.filter(p => !p.skip).forEach(p => {
+    headerView.setUint16(offset, p.type, true);
+    headerView.setUint16(offset + 2, p.tag, true);
+    headerView.setUint32(offset + 4, 0, true);
+    headerView.setUint32(offset + 8, p.value || 0, true);
+    headerView.setUint32(offset + 12, 0, true);
+    offset += 16;
+  });
+
+  CFB.utils.cfb_add(cfb, "__properties_version1.0", new Uint8Array(headerBuf));
+
+  // Adicionar cada propriedade de string como stream
+  props.forEach(p => {
+    const encoded = encodeUTF16LE(p.value || "");
+    const name = `__substg1.0_${p.tag.toString(16).toUpperCase().padStart(4,"0")}${p.type.toString(16).toUpperCase().padStart(4,"0")}`;
+    CFB.utils.cfb_add(cfb, name, encoded);
+  });
+
+  const out = CFB.write(cfb, { type: "array" });
+  return new Blob([new Uint8Array(out)], { type: "application/vnd.ms-outlook" });
 }
 
 async function getRestToken() {
