@@ -218,18 +218,56 @@ async function archiveEmail() {
   }
 }
 
-// ── Obtém o .eml via Outlook REST ────────────────────────────
+// ── Obtém o conteúdo do email via Office.js e Graph API ──────
 async function fetchEml(itemId) {
-  // Usa a REST API do Outlook para baixar o raw mime do email
-  const ewsEndpoint = Office.context.mailbox.restUrl;
-  const token       = await getRestToken();
+  // Tenta primeiro via Graph API (mais confiável)
+  try {
+    // Converte o itemId REST para formato EWS se necessário
+    const restId = Office.context.mailbox.convertToRestId
+      ? Office.context.mailbox.convertToRestId(itemId, Office.MailboxEnums.RestVersion.v2_0)
+      : itemId;
 
-  const res = await fetch(
-    `${ewsEndpoint}/v2.0/me/messages/${itemId}/$value`,
-    { headers: { Authorization: "Bearer " + token } }
-  );
-  if (!res.ok) throw new Error(`Outlook REST ${res.status}`);
-  return await res.blob();
+    const res = await fetch(
+      `https://graph.microsoft.com/v1.0/me/messages/${restId}/$value`,
+      { headers: { Authorization: "Bearer " + accessToken } }
+    );
+    if (res.ok) return await res.blob();
+  } catch {}
+
+  // Fallback: constrói EML a partir dos dados disponíveis via Office.js
+  return await buildEmlFromOffice();
+}
+
+async function buildEmlFromOffice() {
+  const item = Office.context.mailbox.item;
+
+  const body = await new Promise((resolve, reject) => {
+    item.body.getAsync(Office.CoercionType.Html, result => {
+      if (result.status === Office.AsyncResultStatus.Succeeded)
+        resolve(result.value);
+      else
+        resolve("(corpo não disponível)");
+    });
+  });
+
+  const from    = item.from ? item.from.emailAddress : "";
+  const subject = item.subject || "(sem assunto)";
+  const date    = new Date().toUTCString();
+
+  const toList = (item.to || []).map(r => `${r.displayName} <${r.emailAddress}>`).join(", ");
+
+  const eml = [
+    `From: ${from}`,
+    `To: ${toList}`,
+    `Subject: ${subject}`,
+    `Date: ${date}`,
+    `MIME-Version: 1.0`,
+    `Content-Type: text/html; charset=utf-8`,
+    ``,
+    body
+  ].join("\r\n");
+
+  return new Blob([eml], { type: "message/rfc822" });
 }
 
 async function getRestToken() {
