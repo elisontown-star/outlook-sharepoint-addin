@@ -1,0 +1,140 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8"/>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>Arquivar no SharePoint</title>
+
+  <!-- Office.js -->
+  <script src="https://appsforoffice.microsoft.com/lib/1/hosted/office.js"></script>
+  <!-- MSAL -->
+  <script src="https://alcdn.msauth.net/browser/2.38.0/js/msal-browser.min.js"></script>
+
+  <script src="config.js"></script>
+  <script src="taskpane.js" defer></script>
+
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      font-family: "Segoe UI", sans-serif;
+      font-size: 13px;
+      background: #fff;
+      color: #333;
+      padding: 16px;
+    }
+    h2 {
+      font-size: 15px;
+      font-weight: 600;
+      margin-bottom: 4px;
+      color: #0078d4;
+    }
+    .subtitle {
+      font-size: 11px;
+      color: #666;
+      margin-bottom: 16px;
+    }
+    #loginSection button, #archiveBtn {
+      width: 100%;
+      padding: 10px;
+      background: #0078d4;
+      color: white;
+      border: none;
+      border-radius: 4px;
+      cursor: pointer;
+      font-size: 13px;
+      font-weight: 600;
+    }
+    #loginSection button:hover, #archiveBtn:hover {
+      background: #005a9e;
+    }
+
+    /* Seção de seleção de pasta */
+    #folderSection { display: none; }
+    label {
+      display: block;
+      font-size: 11px;
+      font-weight: 600;
+      color: #555;
+      margin-bottom: 4px;
+      margin-top: 12px;
+    }
+    select {
+      width: 100%;
+      padding: 7px 8px;
+      border: 1px solid #ccc;
+      border-radius: 4px;
+      font-size: 13px;
+      background: #fff;
+    }
+    select:focus { outline: none; border-color: #0078d4; }
+    #subfolderSection { display: none; margin-top: 0; }
+
+    #emailPreview {
+      background: #f3f9ff;
+      border: 1px solid #cce4f7;
+      border-radius: 4px;
+      padding: 10px;
+      margin-top: 12px;
+      font-size: 12px;
+    }
+    #emailPreview strong { color: #0078d4; }
+
+    #status {
+      margin-top: 12px;
+      padding: 8px;
+      border-radius: 4px;
+      font-size: 12px;
+      display: none;
+    }
+    #status.success { background: #dff6dd; color: #107c10; border: 1px solid #107c10; }
+    #status.error   { background: #fde7e9; color: #a4262c; border: 1px solid #a4262c; }
+    #status.loading { background: #fff4ce; color: #7a4f00; border: 1px solid #c8a400; }
+
+    #archiveBtn { margin-top: 16px; display: none; }
+    .loader { display: inline-block; width: 12px; height: 12px; border: 2px solid #fff; border-top-color: transparent; border-radius: 50%; animation: spin .6s linear infinite; margin-right: 6px; vertical-align: middle; }
+    @keyframes spin { to { transform: rotate(360deg); } }
+  </style>
+</head>
+<body>
+
+  <h2>📁 Arquivar no SharePoint</h2>
+  <p class="subtitle">Salva este email em uma pasta do site jurídico</p>
+
+  <!-- Login -->
+  <div id="loginSection">
+    <p style="margin-bottom:12px;font-size:12px;color:#555;">
+      Faça login com sua conta Microsoft para continuar.
+    </p>
+    <button onclick="login()">🔐 Entrar com Microsoft</button>
+  </div>
+
+  <!-- Seleção de pasta + arquivamento -->
+  <div id="folderSection">
+
+    <div id="emailPreview">
+      <strong>Email:</strong><br/>
+      <span id="previewSubject">—</span><br/>
+      <span id="previewFrom" style="color:#555;font-size:11px;">—</span>
+    </div>
+
+    <label for="rootFolder">Pasta principal</label>
+    <select id="rootFolder" onchange="loadSubfolders(this.value)">
+      <option value="">Carregando pastas...</option>
+    </select>
+
+    <div id="subfolderSection">
+      <label for="subFolder">Subpasta (opcional)</label>
+      <select id="subFolder">
+        <option value="">— raiz da pasta acima —</option>
+      </select>
+    </div>
+
+    <button id="archiveBtn" onclick="archiveEmail()">
+      💾 Arquivar Email
+    </button>
+  </div>
+
+  <div id="status"></div>
+
+</body>
+</html>
