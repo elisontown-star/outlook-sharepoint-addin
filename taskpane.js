@@ -15,7 +15,7 @@ Office.onReady(async () => {
     auth: {
       clientId:   CONFIG.CLIENT_ID,
       authority:  `https://login.microsoftonline.com/${CONFIG.TENANT_ID}`,
-      redirectUri: window.location.origin + "/taskpane.html"
+      redirectUri: "https://elisontown-star.github.io/outlook-sharepoint-addin/taskpane.html"
     },
     cache: { cacheLocation: "sessionStorage" }
   });
