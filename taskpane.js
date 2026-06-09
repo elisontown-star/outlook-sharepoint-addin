@@ -393,7 +393,7 @@ async function archiveEmail() {
   } catch (e) {
     showStatus("❌ Erro: " + e.message, "error");
   } finally {
-    btn.innerHTML = "💾 Arquivar Email";
+    btn.innerHTML = "Arquivar";
     btn.disabled  = false;
   }
 }
