@@ -9,8 +9,8 @@
   <script src="https://alcdn.msauth.net/browser/2.38.0/js/msal-browser.min.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/cfb@1.2.2/dist/cfb.min.js"></script>
 
-  <script src="config.js?v=2.5"></script>
-  <script src="taskpane.js?v=2.5" defer></script>
+  <script src="config.js?v=2.6"></script>
+  <script src="taskpane.js?v=2.6" defer></script>
 
   <style>
     *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
@@ -309,7 +309,7 @@
   <!-- Header -->
   <div id="vs-header">
     <div class="vs-logo">
-      <div class="vs-icon"><img src="icon-64.png?v=2.5" alt="Vshare" style="width:24px;height:24px;object-fit:contain;"/></div>
+      <div class="vs-icon"><img src="icon-64.png?v=2.6" alt="Vshare" style="width:24px;height:24px;object-fit:contain;"/></div>
       <div>
         <div class="vs-title">Vshare</div>
         <div class="vs-subtitle">Arquivar no SharePoint</div>
@@ -335,7 +335,13 @@
         Faça login com sua conta Microsoft para arquivar emails no SharePoint.
       </p>
       <button id="loginBtn" onclick="login()">
-        🔐 Entrar com Microsoft
+        <svg width="16" height="16" viewBox="0 0 23 23" xmlns="http://www.w3.org/2000/svg" style="flex-shrink:0;">
+          <rect x="1"  y="1"  width="10" height="10" fill="#F25022"/>
+          <rect x="12" y="1"  width="10" height="10" fill="#7FBA00"/>
+          <rect x="1"  y="12" width="10" height="10" fill="#00A4EF"/>
+          <rect x="12" y="12" width="10" height="10" fill="#FFB900"/>
+        </svg>
+        Entrar com Microsoft
       </button>
     </div>
 
@@ -393,8 +399,8 @@
   </div>
 
   <div style="text-align:center; padding:8px 12px; background:#fff;">
-    <img src="logo-vtech.png?v=2.5" alt="VTECH IT" style="height:22px; vertical-align:middle;"/>
-    <span style="font-size:9px; color:#888; margin-left:8px; vertical-align:middle;">Vshare v2.5</span>
+    <img src="logo-vtech.png?v=2.6" alt="VTECH IT" style="height:22px; vertical-align:middle;"/>
+    <span style="font-size:9px; color:#888; margin-left:8px; vertical-align:middle;">Vshare v2.6</span>
   </div>
 
 </body>
