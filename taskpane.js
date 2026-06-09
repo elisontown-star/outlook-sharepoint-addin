@@ -20,8 +20,11 @@ Office.onReady(async () => {
       redirectUri: CONFIG.REDIRECT_URI,
       navigateToLoginRequestUrl: false
     },
-    // localStorage persiste entre sessões do painel
-    cache: { cacheLocation: "localStorage", storeAuthStateInCookie: true }
+    // localStorage persiste entre sessões do painel.
+    // storeAuthStateInCookie REMOVIDO: o Outlook roda o add-in em iframe
+    // cross-site e o navegador rejeita esses cookies (SameSite Lax/Strict),
+    // o que travava toda a autenticação.
+    cache: { cacheLocation: "localStorage", storeAuthStateInCookie: false }
   });
 
   // Processa qualquer redirect pendente do MSAL.
@@ -413,10 +416,10 @@ async function archiveEmail() {
       blob
     );
 
-    showStatus(`✅ Email arquivado como "${fileName}"`, "success");
+    showStatus(`Email arquivado com sucesso em "${fileName}"`, "success");
     selectedResult = null;
   } catch (e) {
-    showStatus("❌ Erro: " + e.message, "error");
+    showStatus("Erro ao arquivar: " + e.message, "error");
   } finally {
     btn.innerHTML = "Arquivar";
     btn.disabled  = false;
@@ -633,48 +636,69 @@ async function searchFolders(query) {
       return a.path.localeCompare(b.path, "pt-BR");
     });
 
-    // Salva resultados em variável global para evitar problemas com
-    // caracteres especiais em data-attributes HTML
     searchResultsCache = results;
+    console.log(`[Vshare] ${results.length} resultados na busca, renderizando...`);
 
-    let html = `<div class="sr-header">${results.length} resultado${results.length > 1 ? "s" : ""}</div>`;
+    const container = document.getElementById("searchResults");
+    container.innerHTML = `<div class="sr-header">${results.length} resultado${results.length > 1 ? "s" : ""}</div>`;
+
     results.forEach((r, i) => {
       const parts  = r.path.split(" / ");
       const isRoot = parts.length === 1;
       const parent = parts.slice(0, -1).join(" / ");
-      html += `<div class="sr-item" data-index="${i}" onclick="selectSearchResult(${i})">
+
+      const item = document.createElement("div");
+      item.className = "sr-item";
+      item.dataset.index = i;
+      item.innerHTML = `
         <span class="sr-icon">${isRoot ? "📁" : "📂"}</span>
         <div>
           <div class="sr-name">${r.name}</div>
           <div class="sr-path">${isRoot ? "Pasta principal" : parent}</div>
-        </div>
-      </div>`;
+        </div>`;
+
+      // Event listener real — mais confiável que onclick inline no Outlook
+      item.addEventListener("click", () => {
+        console.log(`[Vshare] Clicou no resultado ${i}:`, r.name, r.id);
+        selectSearchResult(i);
+      });
+
+      container.appendChild(item);
     });
 
-    showSearchResults(html);
+    container.style.display = "block";
 
   } catch (e) {
+    console.error("[Vshare] Erro na busca:", e);
     showSearchResults(`<div class="sr-empty">Erro na busca: ${e.message}</div>`);
   }
 }
 
 // Seleciona um resultado da busca
 function selectSearchResult(index) {
-  // Lê do cache JS (evita problemas com caracteres especiais em data-attributes)
   const r = searchResultsCache[index];
-  if (!r) return;
+  if (!r) {
+    console.error("[Vshare] Resultado não encontrado no cache:", index);
+    return;
+  }
 
-  // Destaca o item clicado
+  console.log("[Vshare] Selecionando pasta:", r.name, "| ID:", r.id);
+
   document.querySelectorAll(".sr-item").forEach(el => el.classList.remove("selected"));
   const item = document.querySelector(`.sr-item[data-index="${index}"]`);
   if (item) item.classList.add("selected");
 
   selectedResult = { id: r.id, name: r.name, path: r.path };
 
-  // Atualiza indicador de destino e exibe botão arquivar
-  document.getElementById("folderPathText").textContent = r.path;
-  document.getElementById("folderIndicator").style.display = "flex";
-  document.getElementById("archiveBtn").style.display = "flex";
+  const pathEl = document.getElementById("folderPathText");
+  const indEl  = document.getElementById("folderIndicator");
+  const btnEl  = document.getElementById("archiveBtn");
+
+  if (pathEl) pathEl.textContent = r.path;
+  if (indEl)  indEl.style.display = "flex";
+  if (btnEl)  btnEl.style.display = "flex";
+
+  console.log("[Vshare] Pasta selecionada com sucesso. Botão arquivar visível.");
 }
 
 // ── Helpers de UI ────────────────────────────────────────────
