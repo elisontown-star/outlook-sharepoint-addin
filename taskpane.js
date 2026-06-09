@@ -1,6 +1,6 @@
 // ============================================================
 //  Outlook Add-in — Arquivar Email no SharePoint
-//  Autor: VtechIT  |  Versão: 1.0
+//  Autor: VtechIT  |  Versão: 1.1
 // ============================================================
 
 let msalInstance = null;
@@ -13,9 +13,9 @@ let driveId      = null;
 Office.onReady(async () => {
   msalInstance = new msal.PublicClientApplication({
     auth: {
-      clientId:   CONFIG.CLIENT_ID,
-      authority:  `https://login.microsoftonline.com/${CONFIG.TENANT_ID}`,
-      redirectUri: "https://elisontown-star.github.io/outlook-sharepoint-addin/taskpane.html"
+      clientId:    CONFIG.CLIENT_ID,
+      authority:   `https://login.microsoftonline.com/${CONFIG.TENANT_ID}`,
+      redirectUri: CONFIG.REDIRECT_URI   // ← usa config.js, não hardcoded
     },
     cache: { cacheLocation: "sessionStorage" }
   });
@@ -101,13 +101,11 @@ async function graphPut(endpoint, body, contentType = "application/octet-stream"
 async function loadSiteAndDrive() {
   showStatus("Conectando ao SharePoint...", "loading");
   try {
-    // Resolve site pelo URL configurado
     const siteHost = new URL(CONFIG.SITE_URL).hostname;
     const sitePath = new URL(CONFIG.SITE_URL).pathname;
     const siteData = await graphGet(`/sites/${siteHost}:${sitePath}`);
     siteId = siteData.id;
 
-    // Resolve o drive (biblioteca) pelo nome
     const drives = await graphGet(`/sites/${siteId}/drives`);
     const drive  = drives.value.find(
       d => d.name.toLowerCase() === CONFIG.LIBRARY_NAME.toLowerCase()
@@ -121,20 +119,34 @@ async function loadSiteAndDrive() {
 }
 
 // ── Pastas raiz ───────────────────────────────────────────────
+// FIX: $filter=folder ne null não é suportado pela Graph API em drives.
+//      Buscamos todos os filhos e filtramos no cliente.
 async function loadRootFolders() {
   showStatus("Carregando pastas...", "loading");
   try {
     const data = await graphGet(
-      `/drives/${driveId}/root/children?$filter=folder ne null&$select=id,name`
+      `/drives/${driveId}/root/children?$select=id,name,folder`
     );
+
+    // Filtra apenas itens que são pastas (possuem a propriedade "folder")
+    const folders = data.value.filter(item => item.folder !== undefined);
+
     const select = document.getElementById("rootFolder");
     select.innerHTML = '<option value="">— selecione a pasta —</option>';
-    data.value.forEach(f => {
+
+    if (folders.length === 0) {
+      select.innerHTML = '<option value="">Nenhuma pasta encontrada</option>';
+      showStatus("Nenhuma pasta encontrada na biblioteca.", "error");
+      return;
+    }
+
+    folders.forEach(f => {
       const opt = document.createElement("option");
       opt.value = f.id;
       opt.textContent = f.name;
       select.appendChild(opt);
     });
+
     hideStatus();
     document.getElementById("archiveBtn").style.display = "block";
   } catch (e) {
@@ -154,11 +166,15 @@ async function loadSubfolders(folderId) {
 
   try {
     const data = await graphGet(
-      `/drives/${driveId}/items/${folderId}/children?$filter=folder ne null&$select=id,name`
+      `/drives/${driveId}/items/${folderId}/children?$select=id,name,folder`
     );
+
+    // Filtra apenas pastas no cliente
+    const subFolders = data.value.filter(item => item.folder !== undefined);
+
     subSelect.innerHTML = '<option value="">— raiz da pasta acima —</option>';
-    if (data.value.length > 0) {
-      data.value.forEach(f => {
+    if (subFolders.length > 0) {
+      subFolders.forEach(f => {
         const opt = document.createElement("option");
         opt.value = f.id;
         opt.textContent = f.name;
@@ -190,85 +206,123 @@ async function archiveEmail() {
   showStatus("Obtendo conteúdo do email...", "loading");
 
   try {
-    // 1. Obtém o EML via REST do Outlook (requer permissão Mail.Read)
-    const itemId    = currentItem.itemId;
-    const emlData   = await fetchEml(itemId);
+    const { blob, extension } = await fetchEmailBlob();
 
-    // 2. Nome do arquivo: data + assunto sanitizado
-    const date      = new Date().toISOString().slice(0, 10);
-    const subject   = (currentItem.subject || "sem-assunto")
-      .replace(/[\\/:*?"<>|]/g, "_").substring(0, 80);
-    const fileName  = `${date}_${subject}.msg`;
+    // Nome: data local (BR) + assunto sanitizado + extensão correta
+    const date     = getLocalDateString();
+    const subject  = (currentItem.subject || "sem-assunto")
+      .replace(/[\\/:*?"<>|]/g, "_")
+      .substring(0, 80);
+    const fileName = `${date}_${subject}.${extension}`;
 
-    // 3. Upload para o SharePoint
     showStatus("Enviando para o SharePoint...", "loading");
     await graphPut(
       `/drives/${driveId}/items/${targetFolderId}:/${encodeURIComponent(fileName)}:/content`,
-      emlData
+      blob
     );
 
     showStatus(`✅ Email arquivado como "${fileName}"`, "success");
-    btn.innerHTML = "💾 Arquivar Email";
-    btn.disabled  = false;
-
   } catch (e) {
     showStatus("❌ Erro: " + e.message, "error");
+  } finally {
     btn.innerHTML = "💾 Arquivar Email";
     btn.disabled  = false;
   }
 }
 
-// ── Obtém o conteúdo do email via Office.js e Graph API ──────
-async function fetchEml(itemId) {
-  // Tenta primeiro via Graph API (mais confiável)
+// ── Data local no fuso do Brasil ─────────────────────────────
+// FIX: toISOString() retorna UTC; usamos toLocaleDateString para UTC-3
+function getLocalDateString() {
+  const now = new Date();
+  const yyyy = now.getFullYear();
+  const mm   = String(now.getMonth() + 1).padStart(2, "0");
+  const dd   = String(now.getDate()).padStart(2, "0");
+  return `${yyyy}-${mm}-${dd}`;
+}
+
+// ── Obtém o conteúdo do email ─────────────────────────────────
+// Retorna { blob, extension } para que o nome do arquivo seja consistente
+async function fetchEmailBlob() {
+  // Tenta primeiro via Graph API ($value retorna o EML bruto)
   try {
-    // Converte o itemId REST para formato EWS se necessário
     const restId = Office.context.mailbox.convertToRestId
-      ? Office.context.mailbox.convertToRestId(itemId, Office.MailboxEnums.RestVersion.v2_0)
-      : itemId;
+      ? Office.context.mailbox.convertToRestId(
+          currentItem.itemId,
+          Office.MailboxEnums.RestVersion.v2_0
+        )
+      : currentItem.itemId;
 
     const res = await fetch(
       `https://graph.microsoft.com/v1.0/me/messages/${restId}/$value`,
       { headers: { Authorization: "Bearer " + accessToken } }
     );
-    if (res.ok) return await res.blob();
-  } catch {}
 
-  // Fallback: constrói EML a partir dos dados disponíveis via Office.js
-  return await buildEmlFromOffice();
+    if (res.ok) {
+      // Graph API retorna EML (formato RFC-822) → extensão .eml
+      return { blob: await res.blob(), extension: "eml" };
+    }
+  } catch (err) {
+    console.warn("Graph $value falhou, usando fallback:", err);
+  }
+
+  // Fallback: constrói o arquivo a partir dos dados do Office.js
+  return await buildFallbackEmail();
 }
 
-async function buildEmlFromOffice() {
+// ── Fallback: constrói arquivo de email via Office.js ─────────
+async function buildFallbackEmail() {
   const item = Office.context.mailbox.item;
 
-  const body = await new Promise((resolve) => {
+  const body = await new Promise(resolve => {
     item.body.getAsync(Office.CoercionType.Html, result => {
-      resolve(result.status === Office.AsyncResultStatus.Succeeded ? result.value : "(corpo não disponível)");
+      resolve(
+        result.status === Office.AsyncResultStatus.Succeeded
+          ? result.value
+          : "(corpo não disponível)"
+      );
     });
   });
 
   const from    = item.from ? `${item.from.displayName} <${item.from.emailAddress}>` : "";
   const subject = item.subject || "(sem assunto)";
   const date    = new Date().toUTCString();
-  const toList  = (item.to || []).map(r => `${r.displayName} <${r.emailAddress}>`).join(", ");
+  const toList  = (item.to || [])
+    .map(r => `${r.displayName} <${r.emailAddress}>`)
+    .join(", ");
 
-  // Tenta criar .msg usando CFB
-  try {
-    if (typeof CFB !== "undefined") {
-      return buildMsgFile({ from, subject, date, toList, body });
+  // Tenta criar .msg usando CFB se disponível
+  if (typeof CFB !== "undefined") {
+    try {
+      const blob = buildMsgFile({ from, subject, date, toList, body });
+      return { blob, extension: "msg" };
+    } catch (e) {
+      console.warn("CFB falhou, usando EML simples:", e);
     }
-  } catch (e) { console.warn("CFB falhou, usando EML:", e); }
+  }
 
-  // Fallback: EML padrão
-  const eml = [`From: ${from}`, `To: ${toList}`, `Subject: ${subject}`,
-    `Date: ${date}`, `MIME-Version: 1.0`, `Content-Type: text/html; charset=utf-8`, ``, body].join("\r\n");
-  return new Blob([eml], { type: "message/rfc822" });
+  // Último recurso: EML puro (RFC-822)
+  const eml = [
+    `From: ${from}`,
+    `To: ${toList}`,
+    `Subject: ${subject}`,
+    `Date: ${date}`,
+    `MIME-Version: 1.0`,
+    `Content-Type: text/html; charset=utf-8`,
+    ``,
+    body
+  ].join("\r\n");
+
+  return {
+    blob: new Blob([eml], { type: "message/rfc822" }),
+    extension: "eml"   // FIX: era ".msg" mesmo sendo EML
+  };
 }
 
+// ── Construtor de .msg via CFB ────────────────────────────────
+// FIX: adicionado stream __nameid_version1.0 obrigatório no formato .msg
 function buildMsgFile({ from, subject, date, toList, body }) {
-  // Encoder UTF-16LE para strings MAPI
   function encodeUTF16LE(str) {
-    const buf = new ArrayBuffer((str.length + 1) * 2);
+    const buf  = new ArrayBuffer((str.length + 1) * 2);
     const view = new Uint16Array(buf);
     for (let i = 0; i < str.length; i++) view[i] = str.charCodeAt(i);
     view[str.length] = 0;
@@ -277,46 +331,42 @@ function buildMsgFile({ from, subject, date, toList, body }) {
 
   const cfb = CFB.utils.cfb_new();
 
-  // Propriedades MAPI como streams individuais
-  const props = [
-    { tag: 0x0037, type: 0x001F, value: subject },   // PR_SUBJECT
-    { tag: 0x1000, type: 0x001F, value: body },       // PR_BODY_HTML
-    { tag: 0x0042, type: 0x001F, value: from },       // PR_SENT_REPRESENTING_NAME
-    { tag: 0x0E04, type: 0x001F, value: toList },     // PR_DISPLAY_TO
-    { tag: 0x0070, type: 0x001F, value: subject },    // PR_CONVERSATION_TOPIC
+  // Stream obrigatório — sem ele leitores MAPI recusam o arquivo
+  CFB.utils.cfb_add(cfb, "__nameid_version1.0", new Uint8Array(0));
+
+  const stringProps = [
+    { tag: 0x0037, type: 0x001F, value: subject },    // PR_SUBJECT
+    { tag: 0x1013, type: 0x001F, value: body },        // PR_BODY_HTML
+    { tag: 0x0C1A, type: 0x001F, value: from },        // PR_SENDER_NAME
+    { tag: 0x0E04, type: 0x001F, value: toList },      // PR_DISPLAY_TO
+    { tag: 0x0070, type: 0x001F, value: subject },     // PR_CONVERSATION_TOPIC
+    { tag: 0x0039, type: 0x001F, value: date },        // PR_CLIENT_SUBMIT_TIME (texto)
   ];
 
-  // __properties_version1.0 — header fixo de 32 bytes + 16 bytes por prop fixa
   const fixedProps = [
-    { tag: 0x0017, type: 0x0003, value: 0x00000000 }, // PR_IMPORTANCE = normal
-    { tag: 0x001A, type: 0x001F, skip: true },
-    { tag: 0x0026, type: 0x0003, value: 0x00000001 }, // PR_SENSITIVITY
+    { tag: 0x0017, type: 0x0003, value: 0x00000001 }, // PR_IMPORTANCE = high
+    { tag: 0x0026, type: 0x0003, value: 0x00000000 }, // PR_SENSITIVITY = normal
   ];
 
-  const headerBuf = new ArrayBuffer(32 + fixedProps.filter(p => !p.skip).length * 16);
+  const headerSize = 32 + fixedProps.length * 16;
+  const headerBuf  = new ArrayBuffer(headerSize);
   const headerView = new DataView(headerBuf);
-  // Reserved + next_recip_id=0, next_attach_id=0, recip_count=0, attach_count=0
-  headerView.setUint32(8, 0, true);
-  headerView.setUint32(12, 0, true);
-  headerView.setUint32(16, 0, true);
-  headerView.setUint32(20, 0, true);
 
   let offset = 32;
-  fixedProps.filter(p => !p.skip).forEach(p => {
-    headerView.setUint16(offset, p.type, true);
-    headerView.setUint16(offset + 2, p.tag, true);
-    headerView.setUint32(offset + 4, 0, true);
-    headerView.setUint32(offset + 8, p.value || 0, true);
-    headerView.setUint32(offset + 12, 0, true);
+  fixedProps.forEach(p => {
+    headerView.setUint16(offset,      p.type,  true);
+    headerView.setUint16(offset + 2,  p.tag,   true);
+    headerView.setUint32(offset + 4,  0,       true);
+    headerView.setUint32(offset + 8,  p.value, true);
+    headerView.setUint32(offset + 12, 0,       true);
     offset += 16;
   });
 
   CFB.utils.cfb_add(cfb, "__properties_version1.0", new Uint8Array(headerBuf));
 
-  // Adicionar cada propriedade de string como stream
-  props.forEach(p => {
+  stringProps.forEach(p => {
     const encoded = encodeUTF16LE(p.value || "");
-    const name = `__substg1.0_${p.tag.toString(16).toUpperCase().padStart(4,"0")}${p.type.toString(16).toUpperCase().padStart(4,"0")}`;
+    const name = `__substg1.0_${p.tag.toString(16).toUpperCase().padStart(4, "0")}${p.type.toString(16).toUpperCase().padStart(4, "0")}`;
     CFB.utils.cfb_add(cfb, name, encoded);
   });
 
@@ -324,29 +374,14 @@ function buildMsgFile({ from, subject, date, toList, body }) {
   return new Blob([new Uint8Array(out)], { type: "application/vnd.ms-outlook" });
 }
 
-async function getRestToken() {
-  return new Promise((resolve, reject) => {
-    Office.context.mailbox.getCallbackTokenAsync(
-      { isRest: true },
-      result => {
-        if (result.status === Office.AsyncResultStatus.Succeeded)
-          resolve(result.value);
-        else
-          reject(new Error(result.error.message));
-      }
-    );
-  });
-}
-
 // ── Helpers de UI ────────────────────────────────────────────
 function showStatus(msg, type) {
   const el = document.getElementById("status");
-  el.textContent  = msg;
-  el.className    = type;
+  el.textContent   = msg;
+  el.className     = type;
   el.style.display = "block";
 }
 
 function hideStatus() {
-  const el = document.getElementById("status");
-  el.style.display = "none";
+  document.getElementById("status").style.display = "none";
 }
