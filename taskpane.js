@@ -593,42 +593,52 @@ function hideSearchResults() {
 // Busca recursiva em TODOS os níveis da biblioteca
 async function searchFolders(query) {
   try {
-    // BUSCA RÁPIDA: usa o endpoint nativo de search da Graph API.
-    // Em vez de varrer pasta por pasta (lento), o SharePoint faz a busca
-    // no servidor e devolve tudo de uma vez numa única chamada.
-    const endpoint =
-      `/drives/${driveId}/root/search(q='${encodeURIComponent(query)}')` +
-      `?$select=id,name,folder,parentReference&$top=50`;
+    let results = [];
 
-    const items = await graphGetAll(endpoint);
+    // ── Tentativa 1: endpoint nativo de busca da Graph API (rápido) ──
+    try {
+      const endpoint =
+        `/drives/${driveId}/root/search(q='${encodeURIComponent(query)}')?$top=50`;
+      console.log("[Vshare] Buscando via API:", endpoint);
 
-    // Filtra só pastas (a busca também retorna arquivos)
-    const folders = items.filter(isFolder);
+      const items = await graphGetAll(endpoint);
+      console.log(`[Vshare] API retornou ${items.length} itens`);
 
-    if (folders.length === 0) {
+      const folders = items.filter(isFolder);
+      results = folders.map(f => {
+        let path = f.name;
+        const pr = f.parentReference;
+        if (pr && pr.path) {
+          const after = pr.path.split("root:")[1];
+          if (after) {
+            const clean = decodeURIComponent(after).replace(/^\//, "");
+            if (clean) path = `${clean}/${f.name}`.split("/").join(" / ");
+          }
+        }
+        return { id: f.id, name: f.name, path };
+      });
+    } catch (apiErr) {
+      console.warn("[Vshare] Busca via API falhou, usando cache local:", apiErr.message);
+    }
+
+    // ── Tentativa 2 (fallback): filtra as pastas raiz já carregadas ──
+    if (results.length === 0) {
+      const lq = query.toLowerCase();
+      results = allFolders
+        .filter(f => f.name.toLowerCase().includes(lq))
+        .map(f => ({ id: f.id, name: f.name, path: f.name }));
+      console.log(`[Vshare] Fallback local: ${results.length} pastas raiz`);
+    }
+
+    if (results.length === 0) {
       showSearchResults(`<div class="sr-empty">Nenhuma pasta encontrada para "${query}"</div>`);
       return;
     }
 
-    // Monta o caminho a partir do parentReference
-    const results = folders.map(f => {
-      let path = f.name;
-      const pr = f.parentReference;
-      if (pr && pr.path) {
-        // pr.path vem como "/drives/{id}/root:/Pasta/Subpasta"
-        const after = pr.path.split("root:")[1];
-        if (after) {
-          const clean = decodeURIComponent(after).replace(/^\//, "");
-          if (clean) path = `${clean} / ${f.name}`.replace(/\//g, " / ");
-        }
-      }
-      return { id: f.id, name: f.name, path };
-    });
-
     // Ordena por profundidade do caminho e depois alfabético
     results.sort((a, b) => {
-      const ad = (a.path.match(/\//g) || []).length;
-      const bd = (b.path.match(/\//g) || []).length;
+      const ad = (a.path.match(/ \/ /g) || []).length;
+      const bd = (b.path.match(/ \/ /g) || []).length;
       if (ad !== bd) return ad - bd;
       return a.path.localeCompare(b.path, "pt-BR");
     });
