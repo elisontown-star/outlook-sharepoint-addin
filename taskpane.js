@@ -628,39 +628,54 @@ async function searchFolders(query) {
       console.warn("[Vshare] Busca via API falhou, usando cache local:", apiErr.message);
     }
 
-    // ── Tentativa 2 (fallback): busca em pastas raiz + 1 nível de subpastas ──
-    // Como geralmente há poucas pastas raiz, carregar as subpastas de cada
-    // uma é rápido e cobre os casos que a API de search não indexa.
+    // ── Tentativa 2 (fallback): busca RECURSIVA em TODOS os níveis ──
+    // Varre a árvore inteira, mas processando cada nível em PARALELO
+    // (Promise.all) para manter a velocidade mesmo em bibliotecas grandes.
     if (results.length === 0) {
       const lq = query.toLowerCase();
-      console.log("[Vshare] Fallback: buscando em raiz + subpastas...");
+      console.log("[Vshare] Fallback: busca recursiva em todos os níveis...");
 
-      // 2a. Pastas raiz que combinam
+      // Pastas raiz que combinam
       allFolders.forEach(f => {
         if (f.name.toLowerCase().includes(lq)) {
           results.push({ id: f.id, name: f.name, path: f.name });
         }
       });
 
-      // 2b. Subpastas de cada pasta raiz (em paralelo para ser rápido)
-      const subResults = await Promise.all(
-        allFolders.map(async root => {
-          try {
-            const items = await graphGetAll(
-              `/drives/${driveId}/items/${root.id}/children?$select=id,name,folder&$top=200`
-            );
-            return items
-              .filter(isFolder)
-              .filter(s => s.name.toLowerCase().includes(lq))
-              .map(s => ({ id: s.id, name: s.name, path: `${root.name} / ${s.name}` }));
-          } catch {
-            return [];
-          }
-        })
-      );
-      subResults.forEach(arr => results.push(...arr));
+      // Função recursiva: processa todas as subpastas de um nível em paralelo
+      async function searchLevel(folderId, basePath) {
+        let found = [];
+        try {
+          const items = await graphGetAll(
+            `/drives/${driveId}/items/${folderId}/children?$select=id,name,folder&$top=200`
+          );
+          const subFolders = items.filter(isFolder);
 
-      console.log(`[Vshare] Fallback encontrou ${results.length} pastas (raiz + subpastas)`);
+          // Processa todas as subpastas deste nível ao mesmo tempo
+          const deeper = await Promise.all(
+            subFolders.map(async sub => {
+              const subPath = `${basePath} / ${sub.name}`;
+              const matches = [];
+              if (sub.name.toLowerCase().includes(lq)) {
+                matches.push({ id: sub.id, name: sub.name, path: subPath });
+              }
+              // Desce recursivamente (também em paralelo)
+              const childMatches = await searchLevel(sub.id, subPath);
+              return matches.concat(childMatches);
+            })
+          );
+          deeper.forEach(arr => found = found.concat(arr));
+        } catch {}
+        return found;
+      }
+
+      // Dispara a busca em todas as pastas raiz simultaneamente
+      const allLevels = await Promise.all(
+        allFolders.map(root => searchLevel(root.id, root.name))
+      );
+      allLevels.forEach(arr => results.push(...arr));
+
+      console.log(`[Vshare] Fallback recursivo encontrou ${results.length} pastas`);
     }
 
     if (results.length === 0) {
