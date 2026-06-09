@@ -225,6 +225,81 @@
 
     /* ── Folder section (hidden until login) ── */
     #folderSection { display: none; }
+
+    /* ── Search bar ── */
+    .vs-search-wrap {
+      position: relative;
+      margin-bottom: 14px;
+    }
+    #searchInput {
+      width: 100%;
+      padding: 8px 36px 8px 34px;
+      background: #16213e;
+      border: 1px solid #2a3a5c;
+      border-radius: 8px;
+      color: #e0e0e0;
+      font-size: 13px;
+      font-family: "Segoe UI", sans-serif;
+      transition: border-color .2s;
+    }
+    #searchInput:focus { outline: none; border-color: #0078d4; }
+    #searchInput::placeholder { color: #4a5568; }
+    .vs-search-icon {
+      position: absolute; left: 10px; top: 50%;
+      transform: translateY(-50%);
+      color: #4a5568; font-size: 15px; pointer-events: none;
+    }
+    #searchClear {
+      position: absolute; right: 8px; top: 50%;
+      transform: translateY(-50%);
+      background: none; border: none; color: #4a5568;
+      cursor: pointer; font-size: 16px; padding: 2px 4px;
+      display: none; line-height: 1;
+      transition: color .2s;
+    }
+    #searchClear:hover { color: #e0e0e0; }
+
+    /* ── Search results ── */
+    #searchResults {
+      display: none;
+      background: #16213e;
+      border: 1px solid #2a3a5c;
+      border-radius: 8px;
+      margin-bottom: 14px;
+      overflow: hidden;
+    }
+    .sr-header {
+      padding: 6px 12px;
+      font-size: 10px; font-weight: 600;
+      color: #4a5568;
+      text-transform: uppercase;
+      letter-spacing: 0.4px;
+      border-bottom: 1px solid #2a3a5c;
+    }
+    .sr-item {
+      padding: 9px 12px;
+      cursor: pointer;
+      display: flex; align-items: center; gap: 8px;
+      transition: background .15s;
+      border-bottom: 1px solid #1a2a3c;
+    }
+    .sr-item:last-child { border-bottom: none; }
+    .sr-item:hover { background: #0f2a3c; }
+    .sr-item.selected { background: #0d2340; border-left: 3px solid #0078d4; padding-left: 9px; }
+    .sr-name { font-size: 13px; color: #e0e0e0; }
+    .sr-path { font-size: 11px; color: #4a5568; margin-top: 1px; }
+    .sr-icon { font-size: 15px; color: #0078d4; flex-shrink: 0; }
+    .sr-empty {
+      padding: 14px 12px;
+      font-size: 12px; color: #4a5568;
+      text-align: center;
+    }
+    .sr-loading {
+      padding: 12px;
+      font-size: 12px; color: #2196f3;
+      text-align: center;
+      display: flex; align-items: center; justify-content: center; gap: 6px;
+    }
   </style>
 </head>
 <body>
@@ -265,6 +340,15 @@
     <!-- Pastas + arquivamento -->
     <div id="folderSection">
 
+      <!-- Busca em tempo real -->
+      <div class="vs-search-wrap">
+        <span class="vs-search-icon">🔍</span>
+        <input type="text" id="searchInput" placeholder="Buscar pasta..." oninput="onSearchInput(this.value)" autocomplete="off"/>
+        <button id="searchClear" onclick="clearSearch()" title="Limpar busca">✕</button>
+      </div>
+      <div id="searchResults"></div>
+
+      <div id="normalFolderUI">
       <div id="emailPreview">
         <div class="preview-label">Email selecionado</div>
         <div id="previewSubject">—</div>
@@ -300,6 +384,8 @@
 
     </div>
 
+      </div><!-- fim normalFolderUI -->
+    </div><!-- fim folderSection -->
     <div id="status"></div>
 
   </div>

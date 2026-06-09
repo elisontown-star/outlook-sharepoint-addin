@@ -287,6 +287,9 @@ async function loadRootFolders() {
       select.appendChild(opt);
     });
 
+    // Salvar cache para uso na busca
+    allFolders = folders;
+
     hideStatus();
     document.getElementById("archiveBtn").style.display = "flex";
   } catch (e) {
@@ -352,15 +355,20 @@ async function loadSubfolders(folderId) {
 
 // ── Arquivamento ─────────────────────────────────────────────
 async function archiveEmail() {
-  const rootId = document.getElementById("rootFolder").value;
-  const subId  = document.getElementById("subFolder").value;
+  // Prioriza pasta selecionada via busca; senão usa os selects normais
+  let targetFolderId;
 
-  if (!rootId) {
-    showStatus("Selecione uma pasta antes de arquivar.", "error");
-    return;
+  if (selectedResult) {
+    targetFolderId = selectedResult.id;
+  } else {
+    const rootId = document.getElementById("rootFolder").value;
+    const subId  = document.getElementById("subFolder").value;
+    if (!rootId) {
+      showStatus("Selecione uma pasta antes de arquivar.", "error");
+      return;
+    }
+    targetFolderId = subId || rootId;
   }
-
-  const targetFolderId = subId || rootId;
   const btn = document.getElementById("archiveBtn");
   btn.innerHTML = '<span class="loader"></span>Arquivando...';
   btn.disabled  = true;
@@ -381,6 +389,7 @@ async function archiveEmail() {
     );
 
     showStatus(`✅ Email arquivado como "${fileName}"`, "success");
+    selectedResult = null;
   } catch (e) {
     showStatus("❌ Erro: " + e.message, "error");
   } finally {
@@ -497,6 +506,131 @@ function buildMsgFile({ from, subject, date, toList, body }) {
 
   const out = CFB.write(cfb, { type: "array" });
   return new Blob([new Uint8Array(out)], { type: "application/vnd.ms-outlook" });
+}
+
+
+// ── Busca em tempo real ──────────────────────────────────────
+let searchTimer   = null;   // debounce timer
+let allFolders    = [];     // cache de pastas raiz carregadas
+let selectedResult = null;  // pasta selecionada via busca
+
+// Chamada a cada tecla — debounce de 400ms para não sobrecarregar a API
+function onSearchInput(value) {
+  const clearBtn = document.getElementById("searchClear");
+  clearBtn.style.display = value.length > 0 ? "block" : "none";
+
+  clearTimeout(searchTimer);
+
+  if (value.trim().length === 0) {
+    hideSearchResults();
+    showNormalFolderUI(true);
+    return;
+  }
+
+  // Oculta os selects enquanto busca
+  showNormalFolderUI(false);
+  showSearchResults('<div class="sr-loading"><span class="loader" style="border-color:rgba(33,150,243,.3);border-top-color:#2196f3"></span>Buscando...</div>');
+
+  searchTimer = setTimeout(() => searchFolders(value.trim()), 400);
+}
+
+function clearSearch() {
+  document.getElementById("searchInput").value = "";
+  document.getElementById("searchClear").style.display = "none";
+  hideSearchResults();
+  showNormalFolderUI(true);
+  selectedResult = null;
+  updateFolderIndicator();
+}
+
+function showNormalFolderUI(show) {
+  const el = document.getElementById("normalFolderUI");
+  if (el) el.style.display = show ? "block" : "none";
+}
+
+function showSearchResults(html) {
+  const el = document.getElementById("searchResults");
+  el.innerHTML = html;
+  el.style.display = "block";
+}
+
+function hideSearchResults() {
+  const el = document.getElementById("searchResults");
+  el.style.display = "none";
+  el.innerHTML = "";
+}
+
+// Busca recursiva: pesquisa pastas raiz e suas subpastas pelo nome
+async function searchFolders(query) {
+  try {
+    const lq = query.toLowerCase();
+    const results = [];
+
+    // Busca nas pastas raiz já carregadas (cache)
+    for (const folder of allFolders) {
+      if (folder.name.toLowerCase().includes(lq)) {
+        results.push({ id: folder.id, name: folder.name, path: folder.name, parentId: null });
+      }
+
+      // Busca nas subpastas de cada pasta raiz via Graph API
+      try {
+        const subItems = await graphGetAll(
+          `/drives/${driveId}/items/${folder.id}/children?$select=id,name,folder&$top=200`
+        );
+        const subFolders = subItems.filter(i => i.folder !== undefined);
+        for (const sub of subFolders) {
+          if (sub.name.toLowerCase().includes(lq)) {
+            results.push({ id: sub.id, name: sub.name, path: `${folder.name} / ${sub.name}`, parentId: folder.id });
+          }
+        }
+      } catch {}
+    }
+
+    if (results.length === 0) {
+      showSearchResults(`<div class="sr-empty">Nenhuma pasta encontrada para "${query}"</div>`);
+      return;
+    }
+
+    // Monta lista de resultados
+    let html = `<div class="sr-header">${results.length} resultado${results.length > 1 ? "s" : ""}</div>`;
+    results.forEach((r, i) => {
+      const isRoot = !r.parentId;
+      const pathLabel = isRoot ? "Pasta principal" : r.path.split(" / ")[0];
+      html += `<div class="sr-item" data-index="${i}" onclick="selectSearchResult(${i})" data-id="${r.id}" data-name="${r.name}" data-path="${r.path}" data-parent="${r.parentId || ""}">
+        <span class="sr-icon">${isRoot ? "📁" : "📂"}</span>
+        <div>
+          <div class="sr-name">${r.name}</div>
+          <div class="sr-path">${isRoot ? "Pasta principal" : pathLabel}</div>
+        </div>
+      </div>`;
+    });
+
+    showSearchResults(html);
+
+  } catch (e) {
+    showSearchResults(`<div class="sr-empty">Erro na busca: ${e.message}</div>`);
+  }
+}
+
+// Seleciona um resultado da busca
+function selectSearchResult(index) {
+  // Destaca o item selecionado
+  document.querySelectorAll(".sr-item").forEach(el => el.classList.remove("selected"));
+  const item = document.querySelector(`.sr-item[data-index="${index}"]`);
+  if (!item) return;
+  item.classList.add("selected");
+
+  selectedResult = {
+    id:       item.dataset.id,
+    name:     item.dataset.name,
+    path:     item.dataset.path,
+    parentId: item.dataset.parent || null
+  };
+
+  // Atualiza indicador de pasta
+  document.getElementById("folderPathText").textContent = selectedResult.path;
+  document.getElementById("folderIndicator").style.display = "flex";
+  document.getElementById("archiveBtn").style.display = "flex";
 }
 
 // ── Helpers de UI ────────────────────────────────────────────
