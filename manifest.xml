@@ -5,7 +5,7 @@
   xmlns:bt="http://schemas.microsoft.com/office/officeappbasictypes/1.0"
   xsi:type="MailApp">
   <Id>a1b2c3d4-e5f6-7890-abcd-ef1234567890</Id>
-  <Version>2.9.0</Version>
+  <Version>2.9.1</Version>
   <ProviderName>VtechIT</ProviderName>
   <DefaultLocale>pt-BR</DefaultLocale>
   <DisplayName DefaultValue="Vshare"/>
@@ -51,15 +51,14 @@
         <Host xsi:type="MailHost">
 
           <Runtimes>
-            <Runtime resid="EventRuntime.Url">
-              <Override type="javascript" resid="EventRuntime.Url"/>
+            <Runtime resid="WebViewRuntime.Url">
+              <Override type="javascript" resid="JSRuntime.Url"/>
             </Runtime>
           </Runtimes>
 
           <DesktopFormFactor>
-            <FunctionFile resid="FunctionFile.Url"/>
+            <FunctionFile resid="WebViewRuntime.Url"/>
 
-            <!-- Botão no painel de leitura -->
             <ExtensionPoint xsi:type="MessageReadCommandSurface">
               <OfficeTab id="TabDefault">
                 <Group id="msgReadGroup">
@@ -83,12 +82,11 @@
               </OfficeTab>
             </ExtensionPoint>
 
-            <!-- Evento de envio: intercepta novo email, resposta e encaminhamento -->
             <ExtensionPoint xsi:type="LaunchEvent">
               <LaunchEvents>
                 <LaunchEvent Type="OnMessageSend" FunctionName="validateBeforeSend" SendMode="PromptUser"/>
               </LaunchEvents>
-              <SourceLocation resid="EventRuntime.Url"/>
+              <SourceLocation resid="WebViewRuntime.Url"/>
             </ExtensionPoint>
 
           </DesktopFormFactor>
@@ -102,9 +100,9 @@
           <bt:Image id="Icon.80x80" DefaultValue="https://elisontown-star.github.io/outlook-sharepoint-addin/icon-64.png"/>
         </bt:Images>
         <bt:Urls>
-          <bt:Url id="FunctionFile.Url" DefaultValue="https://elisontown-star.github.io/outlook-sharepoint-addin/function-file.html"/>
           <bt:Url id="Taskpane.Url" DefaultValue="https://elisontown-star.github.io/outlook-sharepoint-addin/taskpane.html"/>
-          <bt:Url id="EventRuntime.Url" DefaultValue="https://elisontown-star.github.io/outlook-sharepoint-addin/commands.html"/>
+          <bt:Url id="WebViewRuntime.Url" DefaultValue="https://elisontown-star.github.io/outlook-sharepoint-addin/commands.html"/>
+          <bt:Url id="JSRuntime.Url" DefaultValue="https://elisontown-star.github.io/outlook-sharepoint-addin/commands.js"/>
         </bt:Urls>
         <bt:ShortStrings>
           <bt:String id="GroupLabel" DefaultValue="Vshare"/>
