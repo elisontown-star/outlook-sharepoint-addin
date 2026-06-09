@@ -4,7 +4,7 @@
   xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
   xmlns:bt="http://schemas.microsoft.com/office/officeappbasictypes/1.0"
   xsi:type="MailApp">
-  <Id>bf9cd991-dca5-488e-9868-2be0a06896e4</Id>
+  <Id>c7e94f20-1a3b-4c5d-8e6f-9a0b1c2d3e4f</Id>
   <Version>2.5.0</Version>
   <ProviderName>VtechIT</ProviderName>
   <DefaultLocale>pt-BR</DefaultLocale>
@@ -92,17 +92,5 @@
         <bt:String id="TaskpaneButton.Tooltip" DefaultValue="Arquiva este email no SharePoint com o Vshare"/>
       </bt:LongStrings>
     </Resources>
-    <WebApplicationInfo>
-      <Id>e5a8fd64-798c-4040-9caf-8797976955f4</Id>
-      <Resource>api://e5a8fd64-798c-4040-9caf-8797976955f4</Resource>
-      <Scopes>
-        <Scope>openid</Scope>
-        <Scope>profile</Scope>
-        <Scope>Mail.Read</Scope>
-        <Scope>Files.ReadWrite.All</Scope>
-        <Scope>Sites.ReadWrite.All</Scope>
-        <Scope>offline_access</Scope>
-      </Scopes>
-    </WebApplicationInfo>
   </VersionOverrides>
 </OfficeApp>
