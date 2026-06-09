@@ -510,9 +510,10 @@ function buildMsgFile({ from, subject, date, toList, body }) {
 
 
 // ── Busca em tempo real ──────────────────────────────────────
-let searchTimer   = null;   // debounce timer
-let allFolders    = [];     // cache de pastas raiz carregadas
-let selectedResult = null;  // pasta selecionada via busca
+let searchTimer       = null;  // debounce timer
+let allFolders        = [];    // cache de pastas raiz carregadas
+let selectedResult    = null;  // pasta selecionada via busca
+let searchResultsCache = [];   // resultados da busca (evita data-attributes)
 
 // Chamada a cada tecla — debounce de 400ms para não sobrecarregar a API
 function onSearchInput(value) {
@@ -539,7 +540,8 @@ function clearSearch() {
   document.getElementById("searchClear").style.display = "none";
   hideSearchResults();
   showNormalFolderUI(true);
-  selectedResult = null;
+  selectedResult     = null;
+  searchResultsCache = [];
   updateFolderIndicator();
 }
 
@@ -606,12 +608,16 @@ async function searchFolders(query) {
       return a.path.localeCompare(b.path, "pt-BR");
     });
 
+    // Salva resultados em variável global para evitar problemas com
+    // caracteres especiais em data-attributes HTML
+    searchResultsCache = results;
+
     let html = `<div class="sr-header">${results.length} resultado${results.length > 1 ? "s" : ""}</div>`;
     results.forEach((r, i) => {
       const parts  = r.path.split(" / ");
       const isRoot = parts.length === 1;
       const parent = parts.slice(0, -1).join(" / ");
-      html += `<div class="sr-item" data-index="${i}" onclick="selectSearchResult(${i})" data-id="${r.id}" data-name="${r.name}" data-path="${r.path}">
+      html += `<div class="sr-item" data-index="${i}" onclick="selectSearchResult(${i})">
         <span class="sr-icon">${isRoot ? "📁" : "📂"}</span>
         <div>
           <div class="sr-name">${r.name}</div>
@@ -629,20 +635,19 @@ async function searchFolders(query) {
 
 // Seleciona um resultado da busca
 function selectSearchResult(index) {
-  // Destaca o item selecionado
+  // Lê do cache JS (evita problemas com caracteres especiais em data-attributes)
+  const r = searchResultsCache[index];
+  if (!r) return;
+
+  // Destaca o item clicado
   document.querySelectorAll(".sr-item").forEach(el => el.classList.remove("selected"));
   const item = document.querySelector(`.sr-item[data-index="${index}"]`);
-  if (!item) return;
-  item.classList.add("selected");
+  if (item) item.classList.add("selected");
 
-  selectedResult = {
-    id:   item.dataset.id,
-    name: item.dataset.name,
-    path: item.dataset.path
-  };
+  selectedResult = { id: r.id, name: r.name, path: r.path };
 
-  // Atualiza indicador de pasta
-  document.getElementById("folderPathText").textContent = selectedResult.path;
+  // Atualiza indicador de destino e exibe botão arquivar
+  document.getElementById("folderPathText").textContent = r.path;
   document.getElementById("folderIndicator").style.display = "flex";
   document.getElementById("archiveBtn").style.display = "flex";
 }
