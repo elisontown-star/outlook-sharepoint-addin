@@ -5,18 +5,18 @@
   xmlns:bt="http://schemas.microsoft.com/office/officeappbasictypes/1.0"
   xsi:type="MailApp">
   <Id>a1b2c3d4-e5f6-7890-abcd-ef1234567890</Id>
-  <Version>1.0.0</Version>
+  <Version>1.1.0</Version>
   <ProviderName>VtechIT</ProviderName>
   <DefaultLocale>pt-BR</DefaultLocale>
-  <DisplayName DefaultValue="Arquivar no SharePoint"/>
-  <Description DefaultValue="Arquiva o email em uma pasta do SharePoint"/>
-  <IconUrl DefaultValue="https://warrior-associate-upload-requirement.trycloudflare.com/icon-32.png"/>
-  <HighResolutionIconUrl DefaultValue="https://warrior-associate-upload-requirement.trycloudflare.com/icon-64.png"/>
+  <DisplayName DefaultValue="Vshare"/>
+  <Description DefaultValue="Arquiva emails do Outlook diretamente no SharePoint"/>
+  <IconUrl DefaultValue="https://elisontown-star.github.io/outlook-sharepoint-addin/icon-32.png"/>
+  <HighResolutionIconUrl DefaultValue="https://elisontown-star.github.io/outlook-sharepoint-addin/icon-64.png"/>
   <SupportUrl DefaultValue="https://vtechit.com.br"/>
   <AppDomains>
     <AppDomain>https://login.microsoftonline.com</AppDomain>
     <AppDomain>https://graph.microsoft.com</AppDomain>
-    <AppDomain>https://warrior-associate-upload-requirement.trycloudflare.com</AppDomain>
+    <AppDomain>https://elisontown-star.github.io/outlook-sharepoint-addin</AppDomain>
   </AppDomains>
   <Hosts>
     <Host Name="Mailbox"/>
@@ -29,7 +29,7 @@
   <FormSettings>
     <Form xsi:type="ItemRead">
       <DesktopSettings>
-        <SourceLocation DefaultValue="https://warrior-associate-upload-requirement.trycloudflare.com/taskpane.html"/>
+        <SourceLocation DefaultValue="https://elisontown-star.github.io/outlook-sharepoint-addin/taskpane.html"/>
         <RequestedHeight>350</RequestedHeight>
       </DesktopSettings>
     </Form>
@@ -76,20 +76,20 @@
     </Hosts>
     <Resources>
       <bt:Images>
-        <bt:Image id="Icon.16x16" DefaultValue="https://warrior-associate-upload-requirement.trycloudflare.com/icon-16.png"/>
-        <bt:Image id="Icon.32x32" DefaultValue="https://warrior-associate-upload-requirement.trycloudflare.com/icon-32.png"/>
-        <bt:Image id="Icon.80x80" DefaultValue="https://warrior-associate-upload-requirement.trycloudflare.com/icon-64.png"/>
+        <bt:Image id="Icon.16x16" DefaultValue="https://elisontown-star.github.io/outlook-sharepoint-addin/icon-16.png"/>
+        <bt:Image id="Icon.32x32" DefaultValue="https://elisontown-star.github.io/outlook-sharepoint-addin/icon-32.png"/>
+        <bt:Image id="Icon.80x80" DefaultValue="https://elisontown-star.github.io/outlook-sharepoint-addin/icon-64.png"/>
       </bt:Images>
       <bt:Urls>
-        <bt:Url id="FunctionFile.Url" DefaultValue="https://warrior-associate-upload-requirement.trycloudflare.com/function-file.html"/>
-        <bt:Url id="Taskpane.Url" DefaultValue="https://warrior-associate-upload-requirement.trycloudflare.com/taskpane.html"/>
+        <bt:Url id="FunctionFile.Url" DefaultValue="https://elisontown-star.github.io/outlook-sharepoint-addin/function-file.html"/>
+        <bt:Url id="Taskpane.Url" DefaultValue="https://elisontown-star.github.io/outlook-sharepoint-addin/taskpane.html"/>
       </bt:Urls>
       <bt:ShortStrings>
-        <bt:String id="GroupLabel" DefaultValue="SharePoint"/>
-        <bt:String id="TaskpaneButton.Label" DefaultValue="Arquivar Email"/>
+        <bt:String id="GroupLabel" DefaultValue="Vshare"/>
+        <bt:String id="TaskpaneButton.Label" DefaultValue="Vshare"/>
       </bt:ShortStrings>
       <bt:LongStrings>
-        <bt:String id="TaskpaneButton.Tooltip" DefaultValue="Arquiva este email no SharePoint"/>
+        <bt:String id="TaskpaneButton.Tooltip" DefaultValue="Arquiva este email no SharePoint com o Vshare"/>
       </bt:LongStrings>
     </Resources>
   </VersionOverrides>
