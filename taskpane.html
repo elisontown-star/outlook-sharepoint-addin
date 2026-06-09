@@ -5,138 +5,304 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
   <title>Vshare</title>
 
-  <!-- Office.js -->
   <script src="https://appsforoffice.microsoft.com/lib/1/hosted/office.js"></script>
-  <!-- MSAL -->
   <script src="https://alcdn.msauth.net/browser/2.38.0/js/msal-browser.min.js"></script>
-  <!-- CFB para geração de .msg -->
   <script src="https://cdn.sheetjs.com/cfb-1.2.2/package/dist/cfb.min.js"></script>
 
   <script src="config.js"></script>
   <script src="taskpane.js" defer></script>
 
   <style>
-    * { box-sizing: border-box; margin: 0; padding: 0; }
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
     body {
       font-family: "Segoe UI", sans-serif;
       font-size: 13px;
-      background: #fff;
-      color: #333;
-      padding: 16px;
-    }
-    h2 {
-      font-size: 15px;
-      font-weight: 600;
-      margin-bottom: 4px;
-      color: #0078d4;
-    }
-    .subtitle {
-      font-size: 11px;
-      color: #666;
-      margin-bottom: 16px;
-    }
-    #loginSection button, #archiveBtn {
-      width: 100%;
-      padding: 10px;
-      background: #0078d4;
-      color: white;
-      border: none;
-      border-radius: 4px;
-      cursor: pointer;
-      font-size: 13px;
-      font-weight: 600;
-    }
-    #loginSection button:hover, #archiveBtn:hover {
-      background: #005a9e;
+      background: #1a1a2e;
+      color: #e0e0e0;
+      min-height: 100vh;
     }
 
-    /* Seção de seleção de pasta */
-    #folderSection { display: none; }
-    label {
-      display: block;
-      font-size: 11px;
-      font-weight: 600;
-      color: #555;
-      margin-bottom: 4px;
-      margin-top: 12px;
+    /* ── Header ── */
+    #vs-header {
+      background: #16213e;
+      padding: 14px 16px 12px;
+      border-bottom: 1px solid #2a3a5c;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
     }
+    .vs-logo { display: flex; align-items: center; gap: 10px; }
+    .vs-icon {
+      width: 32px; height: 32px;
+      background: #0078d4;
+      border-radius: 8px;
+      display: flex; align-items: center; justify-content: center;
+      font-weight: 700; font-size: 13px; color: #fff;
+      letter-spacing: -0.5px; flex-shrink: 0;
+    }
+    .vs-title { font-size: 15px; font-weight: 600; color: #fff; }
+    .vs-subtitle { font-size: 11px; color: #8892a4; margin-top: 1px; }
+
+    #logoutBtn {
+      background: transparent;
+      border: 1px solid #2a3a5c;
+      color: #8892a4;
+      border-radius: 6px;
+      padding: 4px 9px;
+      font-size: 11px;
+      cursor: pointer;
+      display: none;
+      align-items: center;
+      gap: 4px;
+      transition: border-color .2s, color .2s;
+    }
+    #logoutBtn:hover { border-color: #e74c3c; color: #e74c3c; }
+
+    /* ── User bar ── */
+    #userBar {
+      background: #16213e;
+      padding: 8px 16px;
+      display: none;
+      align-items: center;
+      gap: 8px;
+      border-bottom: 1px solid #2a3a5c;
+    }
+    .vs-avatar {
+      width: 24px; height: 24px;
+      border-radius: 50%;
+      background: #0078d4;
+      display: flex; align-items: center; justify-content: center;
+      font-size: 10px; font-weight: 600; color: #fff; flex-shrink: 0;
+    }
+    #userName { font-size: 12px; color: #8892a4; }
+    #userName span { color: #e0e0e0; font-weight: 500; }
+
+    /* ── Body ── */
+    #vs-body { padding: 14px 16px; }
+
+    /* ── Login ── */
+    #loginSection { display: block; }
+    .vs-login-msg {
+      font-size: 12px; color: #8892a4;
+      margin-bottom: 14px; line-height: 1.6;
+    }
+
+    /* ── Email preview ── */
+    #emailPreview {
+      background: #16213e;
+      border: 1px solid #2a3a5c;
+      border-left: 3px solid #0078d4;
+      border-radius: 8px;
+      padding: 10px 12px;
+      margin-bottom: 14px;
+    }
+    .preview-label {
+      font-size: 10px; font-weight: 600;
+      color: #2196f3;
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+      margin-bottom: 4px;
+    }
+    #previewSubject {
+      font-size: 12px; color: #e0e0e0; font-weight: 500;
+      white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+      margin-bottom: 2px;
+    }
+    #previewFrom { font-size: 11px; color: #8892a4; }
+
+    /* ── Labels e selects ── */
+    .vs-label {
+      font-size: 11px; font-weight: 600;
+      color: #8892a4;
+      text-transform: uppercase;
+      letter-spacing: 0.4px;
+      margin-bottom: 6px;
+      display: block;
+    }
+    .vs-select-wrap { position: relative; margin-bottom: 12px; }
     select {
       width: 100%;
-      padding: 7px 8px;
-      border: 1px solid #ccc;
-      border-radius: 4px;
+      padding: 8px 30px 8px 10px;
+      background: #16213e;
+      border: 1px solid #2a3a5c;
+      border-radius: 8px;
+      color: #e0e0e0;
       font-size: 13px;
-      background: #fff;
+      appearance: none;
+      cursor: pointer;
+      transition: border-color .2s;
     }
     select:focus { outline: none; border-color: #0078d4; }
-    #subfolderSection { display: none; margin-top: 0; }
-
-    #emailPreview {
-      background: #f3f9ff;
-      border: 1px solid #cce4f7;
-      border-radius: 4px;
-      padding: 10px;
-      margin-top: 12px;
-      font-size: 12px;
+    .vs-chevron {
+      position: absolute; right: 10px; top: 50%;
+      transform: translateY(-50%);
+      color: #8892a4; pointer-events: none; font-size: 14px;
     }
-    #emailPreview strong { color: #0078d4; }
 
+    /* ── Folder indicator ── */
+    #folderIndicator {
+      background: #16213e;
+      border: 1px solid #2a3a5c;
+      border-radius: 8px;
+      padding: 8px 12px;
+      margin-bottom: 14px;
+      display: none;
+      align-items: center;
+      gap: 8px;
+      font-size: 12px;
+      transition: opacity .3s;
+    }
+    #folderIndicator .fi-icon { font-size: 16px; color: #0078d4; }
+    #folderPath { color: #8892a4; }
+    #folderPath span { color: #2196f3; font-weight: 500; }
+
+    /* ── Subpasta ── */
+    #subfolderSection { display: none; }
+
+    /* ── Botão arquivar ── */
+    #archiveBtn {
+      width: 100%;
+      padding: 11px;
+      background: #0078d4;
+      color: #fff;
+      border: none;
+      border-radius: 8px;
+      font-size: 13px; font-weight: 600;
+      cursor: pointer;
+      display: none;
+      align-items: center;
+      justify-content: center;
+      gap: 8px;
+      transition: background .2s, transform .1s;
+      margin-top: 2px;
+    }
+    #archiveBtn:hover:not(:disabled) { background: #005a9e; }
+    #archiveBtn:active:not(:disabled) { transform: scale(0.98); }
+    #archiveBtn:disabled { opacity: 0.6; cursor: not-allowed; }
+
+    /* ── Botão login ── */
+    #loginBtn {
+      width: 100%;
+      padding: 11px;
+      background: #0078d4;
+      color: #fff;
+      border: none;
+      border-radius: 8px;
+      font-size: 13px; font-weight: 600;
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 8px;
+      transition: background .2s;
+    }
+    #loginBtn:hover { background: #005a9e; }
+
+    /* ── Status ── */
     #status {
       margin-top: 12px;
-      padding: 8px;
-      border-radius: 4px;
+      padding: 8px 12px;
+      border-radius: 8px;
       font-size: 12px;
       display: none;
+      line-height: 1.5;
     }
-    #status.success { background: #dff6dd; color: #107c10; border: 1px solid #107c10; }
-    #status.error   { background: #fde7e9; color: #a4262c; border: 1px solid #a4262c; }
-    #status.loading { background: #fff4ce; color: #7a4f00; border: 1px solid #c8a400; }
+    #status.success { background: #0d2b1a; color: #1db954; border: 1px solid #1db954; }
+    #status.error   { background: #2b0d0d; color: #e74c3c; border: 1px solid #e74c3c; }
+    #status.loading { background: #1a2b3c; color: #2196f3; border: 1px solid #2196f3; }
 
-    #archiveBtn { margin-top: 16px; display: none; }
-    .loader { display: inline-block; width: 12px; height: 12px; border: 2px solid #fff; border-top-color: transparent; border-radius: 50%; animation: spin .6s linear infinite; margin-right: 6px; vertical-align: middle; }
+    /* ── Loader spinner ── */
+    .loader {
+      display: inline-block; width: 12px; height: 12px;
+      border: 2px solid rgba(255,255,255,0.3);
+      border-top-color: #fff;
+      border-radius: 50%;
+      animation: spin .6s linear infinite;
+      vertical-align: middle;
+    }
     @keyframes spin { to { transform: rotate(360deg); } }
+
+    /* ── Folder section (hidden until login) ── */
+    #folderSection { display: none; }
   </style>
 </head>
 <body>
 
-  <h2>📁 Vshare</h2>
-  <p class="subtitle">Salva este email em uma pasta do SharePoint</p>
-
-  <!-- Login -->
-  <div id="loginSection">
-    <p style="margin-bottom:12px;font-size:12px;color:#555;">
-      Faça login com sua conta Microsoft para continuar.
-    </p>
-    <button onclick="login()">🔐 Entrar com Microsoft</button>
-  </div>
-
-  <!-- Seleção de pasta + arquivamento -->
-  <div id="folderSection">
-
-    <div id="emailPreview">
-      <strong>Email:</strong><br/>
-      <span id="previewSubject">—</span><br/>
-      <span id="previewFrom" style="color:#555;font-size:11px;">—</span>
+  <!-- Header -->
+  <div id="vs-header">
+    <div class="vs-logo">
+      <div class="vs-icon">VS</div>
+      <div>
+        <div class="vs-title">Vshare</div>
+        <div class="vs-subtitle">Arquivar no SharePoint</div>
+      </div>
     </div>
-
-    <label for="rootFolder">Pasta principal</label>
-    <select id="rootFolder" onchange="loadSubfolders(this.value)">
-      <option value="">Carregando pastas...</option>
-    </select>
-
-    <div id="subfolderSection">
-      <label for="subFolder">Subpasta (opcional)</label>
-      <select id="subFolder">
-        <option value="">— raiz da pasta acima —</option>
-      </select>
-    </div>
-
-    <button id="archiveBtn" onclick="archiveEmail()">
-      💾 Arquivar Email
+    <button id="logoutBtn" onclick="logout()" title="Sair da conta">
+      ⏻ Sair
     </button>
   </div>
 
-  <div id="status"></div>
+  <!-- User bar -->
+  <div id="userBar">
+    <div class="vs-avatar" id="userAvatar">?</div>
+    <div id="userName"><span id="userEmail">—</span></div>
+  </div>
+
+  <!-- Body -->
+  <div id="vs-body">
+
+    <!-- Login -->
+    <div id="loginSection">
+      <p class="vs-login-msg">
+        Faça login com sua conta Microsoft para arquivar emails no SharePoint.
+      </p>
+      <button id="loginBtn" onclick="login()">
+        🔐 Entrar com Microsoft
+      </button>
+    </div>
+
+    <!-- Pastas + arquivamento -->
+    <div id="folderSection">
+
+      <div id="emailPreview">
+        <div class="preview-label">Email selecionado</div>
+        <div id="previewSubject">—</div>
+        <div id="previewFrom">—</div>
+      </div>
+
+      <label class="vs-label" for="rootFolder">Pasta principal</label>
+      <div class="vs-select-wrap">
+        <select id="rootFolder" onchange="onRootFolderChange(this.value)">
+          <option value="">Carregando...</option>
+        </select>
+        <span class="vs-chevron">▾</span>
+      </div>
+
+      <div id="subfolderSection">
+        <label class="vs-label" for="subFolder">Subpasta</label>
+        <div class="vs-select-wrap">
+          <select id="subFolder" onchange="updateFolderIndicator()">
+            <option value="">— raiz da pasta acima —</option>
+          </select>
+          <span class="vs-chevron">▾</span>
+        </div>
+      </div>
+
+      <div id="folderIndicator">
+        <span class="fi-icon">📁</span>
+        <div id="folderPath">Destino: <span id="folderPathText">—</span></div>
+      </div>
+
+      <button id="archiveBtn" onclick="archiveEmail()">
+        💾 Arquivar Email
+      </button>
+
+    </div>
+
+    <div id="status"></div>
+
+  </div>
 
 </body>
 </html>

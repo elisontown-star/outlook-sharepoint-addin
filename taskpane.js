@@ -4,11 +4,12 @@
 //  Fix: SSO nativo do Office + localStorage para sessão persistente
 // ============================================================
 
-let msalInstance = null;
-let accessToken  = null;
-let currentItem  = null;
-let siteId       = null;
-let driveId      = null;
+let msalInstance  = null;
+let accessToken   = null;
+let currentItem   = null;
+let siteId        = null;
+let driveId       = null;
+let loggedAccount = null;
 
 // ── Inicialização ────────────────────────────────────────────
 Office.onReady(async () => {
@@ -39,7 +40,8 @@ async function tryAutoLogin() {
       // Troca o token do Office por um token da Graph API via OBO (On-Behalf-Of)
       const graphToken = await exchangeTokenViaOBO(ssoToken);
       if (graphToken) {
-        accessToken = graphToken;
+        accessToken   = graphToken;
+        loggedAccount = msalInstance.getAllAccounts()[0] || null;
         await onLoggedIn();
         return;
       }
@@ -56,7 +58,8 @@ async function tryAutoLogin() {
         scopes:  CONFIG.SCOPES,
         account: accounts[0]
       });
-      accessToken = resp.accessToken;
+      accessToken   = resp.accessToken;
+      loggedAccount = accounts[0];
       await onLoggedIn();
       return;
     }
@@ -127,7 +130,8 @@ async function login() {
       scopes:  CONFIG.SCOPES,
       account: resp.account
     });
-    accessToken = tokenResp.accessToken;
+    accessToken   = tokenResp.accessToken;
+    loggedAccount = resp.account;
     await onLoggedIn();
   } catch (e) {
     showStatus("Erro no login: " + e.message, "error");
@@ -139,6 +143,14 @@ async function onLoggedIn() {
   document.getElementById("folderSection").style.display = "block";
   hideStatus();
 
+  // Mostrar user bar e botão logout
+  const email = loggedAccount?.username || loggedAccount?.name || "—";
+  document.getElementById("userEmail").textContent = email;
+  const initials = email.substring(0, 2).toUpperCase();
+  document.getElementById("userAvatar").textContent = initials;
+  document.getElementById("userBar").style.display = "flex";
+  document.getElementById("logoutBtn").style.display = "flex";
+
   currentItem = Office.context.mailbox.item;
   document.getElementById("previewSubject").textContent =
     currentItem.subject || "(sem assunto)";
@@ -147,6 +159,24 @@ async function onLoggedIn() {
 
   await loadSiteAndDrive();
   await loadRootFolders();
+}
+
+// ── Logout ───────────────────────────────────────────────────
+function logout() {
+  if (msalInstance) {
+    const accounts = msalInstance.getAllAccounts();
+    if (accounts.length > 0) {
+      msalInstance.logoutPopup({ account: accounts[0] }).catch(() => {});
+    }
+  }
+  accessToken   = null;
+  loggedAccount = null;
+  document.getElementById("userBar").style.display        = "none";
+  document.getElementById("logoutBtn").style.display      = "none";
+  document.getElementById("folderSection").style.display  = "none";
+  document.getElementById("folderIndicator").style.display = "none";
+  document.getElementById("loginSection").style.display   = "block";
+  hideStatus();
 }
 
 // ── Renovação automática do token ────────────────────────────
@@ -258,13 +288,35 @@ async function loadRootFolders() {
     });
 
     hideStatus();
-    document.getElementById("archiveBtn").style.display = "block";
+    document.getElementById("archiveBtn").style.display = "flex";
   } catch (e) {
     showStatus("Erro ao carregar pastas: " + e.message, "error");
   }
 }
 
-// ── Subpastas ────────────────────────────────────────────────
+// ── Subpastas + indicador de pasta ──────────────────────────
+function updateFolderIndicator() {
+  const rootSel = document.getElementById("rootFolder");
+  const subSel  = document.getElementById("subFolder");
+  const rootName = rootSel.options[rootSel.selectedIndex]?.text || "";
+  const subName  = subSel.options[subSel.selectedIndex]?.text || "";
+  const indicator = document.getElementById("folderIndicator");
+
+  if (!rootSel.value) {
+    indicator.style.display = "none";
+    return;
+  }
+
+  const path = subSel.value ? `${rootName} / ${subName}` : rootName;
+  document.getElementById("folderPathText").textContent = path;
+  indicator.style.display = "flex";
+}
+
+async function onRootFolderChange(folderId) {
+  updateFolderIndicator();
+  await loadSubfolders(folderId);
+}
+
 async function loadSubfolders(folderId) {
   const subSection = document.getElementById("subfolderSection");
   const subSelect  = document.getElementById("subFolder");
@@ -292,6 +344,7 @@ async function loadSubfolders(folderId) {
     } else {
       subSection.style.display = "none";
     }
+    updateFolderIndicator();
   } catch {
     subSection.style.display = "none";
   }
