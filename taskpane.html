@@ -9,8 +9,8 @@
   <script src="https://alcdn.msauth.net/browser/2.38.0/js/msal-browser.min.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/cfb@1.2.2/dist/cfb.min.js"></script>
 
-  <script src="config.js?v=2.4"></script>
-  <script src="taskpane.js?v=2.4" defer></script>
+  <script src="config.js?v=2.5"></script>
+  <script src="taskpane.js?v=2.5" defer></script>
 
   <style>
     *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
@@ -21,6 +21,8 @@
       background: #1a1a2e;
       color: #e0e0e0;
       min-height: 100vh;
+      display: flex;
+      flex-direction: column;
     }
 
     /* ── Header ── */
@@ -79,7 +81,7 @@
     #userName span { color: #e0e0e0; font-weight: 500; }
 
     /* ── Body ── */
-    #vs-body { padding: 14px 16px; }
+    #vs-body { padding: 14px 16px; flex: 1; }
 
     /* ── Login ── */
     #loginSection { display: block; }
@@ -307,7 +309,7 @@
   <!-- Header -->
   <div id="vs-header">
     <div class="vs-logo">
-      <div class="vs-icon"><img src="icon-64.png?v=2.4" alt="Vshare" style="width:24px;height:24px;object-fit:contain;"/></div>
+      <div class="vs-icon"><img src="icon-64.png?v=2.5" alt="Vshare" style="width:24px;height:24px;object-fit:contain;"/></div>
       <div>
         <div class="vs-title">Vshare</div>
         <div class="vs-subtitle">Arquivar no SharePoint</div>
@@ -388,11 +390,11 @@
     </div><!-- fim folderSection -->
     <div id="status"></div>
 
-    <div style="text-align:center; margin-top:24px; padding:16px 12px 12px; background:#fff; border-radius:8px;">
-      <img src="logo-vtech.png?v=2.4" alt="VTECH IT" style="height:36px; margin-bottom:6px;"/>
-      <div style="font-size:10px; color:#888;">Vshare v2.4</div>
-    </div>
+  </div>
 
+  <div style="text-align:center; padding:8px 12px; background:#fff;">
+    <img src="logo-vtech.png?v=2.5" alt="VTECH IT" style="height:22px; vertical-align:middle;"/>
+    <span style="font-size:9px; color:#888; margin-left:8px; vertical-align:middle;">Vshare v2.5</span>
   </div>
 
 </body>
