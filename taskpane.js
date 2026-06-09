@@ -17,12 +17,27 @@ Office.onReady(async () => {
     auth: {
       clientId:    CONFIG.CLIENT_ID,
       authority:   `https://login.microsoftonline.com/${CONFIG.TENANT_ID}`,
-      redirectUri: CONFIG.REDIRECT_URI
+      redirectUri: CONFIG.REDIRECT_URI,
+      navigateToLoginRequestUrl: false
     },
-    // FIX: localStorage persiste entre sessões do painel.
-    // sessionStorage é limpo toda vez que o painel fecha — causa o login repetido.
+    // localStorage persiste entre sessões do painel
     cache: { cacheLocation: "localStorage", storeAuthStateInCookie: true }
   });
+
+  // Processa qualquer redirect pendente do MSAL.
+  // Sem isso, o MSAL tenta interpretar o HTML da página como resposta de
+  // token e gera "Erro de parse XML: nenhum elemento raiz encontrado".
+  try {
+    const redirectResult = await msalInstance.handleRedirectPromise();
+    if (redirectResult && redirectResult.account) {
+      accessToken   = redirectResult.accessToken;
+      loggedAccount = redirectResult.account;
+      await onLoggedIn();
+      return;
+    }
+  } catch (e) {
+    console.warn("[Vshare] handleRedirectPromise:", e.message);
+  }
 
   await tryAutoLogin();
 });
@@ -225,6 +240,12 @@ async function graphGetAll(endpoint) {
   return items;
 }
 
+// Detecção robusta de pasta — a Graph API pode trazer "folder" como objeto
+// (com childCount) ou apenas presente; checamos ambos os casos
+function isFolder(item) {
+  return item && item.folder != null;
+}
+
 async function graphPut(endpoint, body, contentType = "application/octet-stream") {
   const token = await getValidToken();
   const res = await fetch("https://graph.microsoft.com/v1.0" + endpoint, {
@@ -268,8 +289,10 @@ async function loadRootFolders() {
     const allItems = await graphGetAll(
       `/drives/${driveId}/root/children?$select=id,name,folder&$top=200`
     );
-    const folders = allItems.filter(item => item.folder !== undefined)
+    const folders = allItems.filter(isFolder)
       .sort((a, b) => a.name.localeCompare(b.name, "pt-BR"));
+
+    console.log(`[Vshare] Pastas raiz encontradas: ${folders.length} de ${allItems.length} itens`);
 
     const select = document.getElementById("rootFolder");
     select.innerHTML = '<option value="">— selecione a pasta —</option>';
@@ -331,8 +354,10 @@ async function loadSubfolders(folderId) {
     const allItems = await graphGetAll(
       `/drives/${driveId}/items/${folderId}/children?$select=id,name,folder&$top=200`
     );
-    const subFolders = allItems.filter(item => item.folder !== undefined)
+    const subFolders = allItems.filter(isFolder)
       .sort((a, b) => a.name.localeCompare(b.name, "pt-BR"));
+
+    console.log(`[Vshare] Subpastas encontradas: ${subFolders.length} de ${allItems.length} itens`);
 
     subSelect.innerHTML = '<option value="">— raiz da pasta acima —</option>';
 
@@ -575,7 +600,7 @@ async function searchFolders(query) {
         const items = await graphGetAll(
           `/drives/${driveId}/items/${folderId}/children?$select=id,name,folder&$top=200`
         );
-        const subFolders = items.filter(i => i.folder !== undefined);
+        const subFolders = items.filter(isFolder);
         for (const sub of subFolders) {
           const subPath = `${folderPath} / ${sub.name}`;
           if (sub.name.toLowerCase().includes(lq)) {
@@ -663,3 +688,13 @@ function showStatus(msg, type) {
 function hideStatus() {
   document.getElementById("status").style.display = "none";
 }
+
+// ── Exposição global para handlers onclick/oninput inline ────
+window.login = login;
+window.logout = logout;
+window.onSearchInput = onSearchInput;
+window.clearSearch = clearSearch;
+window.onRootFolderChange = onRootFolderChange;
+window.updateFolderIndicator = updateFolderIndicator;
+window.archiveEmail = archiveEmail;
+window.selectSearchResult = selectSearchResult;
