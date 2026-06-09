@@ -595,6 +595,13 @@ async function searchFolders(query) {
   try {
     let results = [];
 
+    // Proteção: se o drive ainda não carregou, não dá pra buscar
+    if (!driveId) {
+      console.warn("[Vshare] driveId ainda não carregado");
+      showSearchResults('<div class="sr-empty">Aguarde o carregamento das pastas...</div>');
+      return;
+    }
+
     // ── Tentativa 1: endpoint nativo de busca da Graph API (rápido) ──
     try {
       const endpoint =
@@ -621,13 +628,39 @@ async function searchFolders(query) {
       console.warn("[Vshare] Busca via API falhou, usando cache local:", apiErr.message);
     }
 
-    // ── Tentativa 2 (fallback): filtra as pastas raiz já carregadas ──
+    // ── Tentativa 2 (fallback): busca em pastas raiz + 1 nível de subpastas ──
+    // Como geralmente há poucas pastas raiz, carregar as subpastas de cada
+    // uma é rápido e cobre os casos que a API de search não indexa.
     if (results.length === 0) {
       const lq = query.toLowerCase();
-      results = allFolders
-        .filter(f => f.name.toLowerCase().includes(lq))
-        .map(f => ({ id: f.id, name: f.name, path: f.name }));
-      console.log(`[Vshare] Fallback local: ${results.length} pastas raiz`);
+      console.log("[Vshare] Fallback: buscando em raiz + subpastas...");
+
+      // 2a. Pastas raiz que combinam
+      allFolders.forEach(f => {
+        if (f.name.toLowerCase().includes(lq)) {
+          results.push({ id: f.id, name: f.name, path: f.name });
+        }
+      });
+
+      // 2b. Subpastas de cada pasta raiz (em paralelo para ser rápido)
+      const subResults = await Promise.all(
+        allFolders.map(async root => {
+          try {
+            const items = await graphGetAll(
+              `/drives/${driveId}/items/${root.id}/children?$select=id,name,folder&$top=200`
+            );
+            return items
+              .filter(isFolder)
+              .filter(s => s.name.toLowerCase().includes(lq))
+              .map(s => ({ id: s.id, name: s.name, path: `${root.name} / ${s.name}` }));
+          } catch {
+            return [];
+          }
+        })
+      );
+      subResults.forEach(arr => results.push(...arr));
+
+      console.log(`[Vshare] Fallback encontrou ${results.length} pastas (raiz + subpastas)`);
     }
 
     if (results.length === 0) {
