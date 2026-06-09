@@ -560,30 +560,37 @@ function hideSearchResults() {
   el.innerHTML = "";
 }
 
-// Busca recursiva: pesquisa pastas raiz e suas subpastas pelo nome
+// Busca recursiva em TODOS os níveis da biblioteca
 async function searchFolders(query) {
   try {
     const lq = query.toLowerCase();
     const results = [];
 
-    // Busca nas pastas raiz já carregadas (cache)
-    for (const folder of allFolders) {
-      if (folder.name.toLowerCase().includes(lq)) {
-        results.push({ id: folder.id, name: folder.name, path: folder.name, parentId: null });
-      }
-
-      // Busca nas subpastas de cada pasta raiz via Graph API
+    // Percorre recursivamente a árvore de pastas
+    async function walkFolder(folderId, folderPath, depth) {
+      if (depth > 6) return; // limite de segurança para evitar loops infinitos
       try {
-        const subItems = await graphGetAll(
-          `/drives/${driveId}/items/${folder.id}/children?$select=id,name,folder&$top=200`
+        const items = await graphGetAll(
+          `/drives/${driveId}/items/${folderId}/children?$select=id,name,folder&$top=200`
         );
-        const subFolders = subItems.filter(i => i.folder !== undefined);
+        const subFolders = items.filter(i => i.folder !== undefined);
         for (const sub of subFolders) {
+          const subPath = `${folderPath} / ${sub.name}`;
           if (sub.name.toLowerCase().includes(lq)) {
-            results.push({ id: sub.id, name: sub.name, path: `${folder.name} / ${sub.name}`, parentId: folder.id });
+            results.push({ id: sub.id, name: sub.name, path: subPath });
           }
+          // Continua descendo na árvore
+          await walkFolder(sub.id, subPath, depth + 1);
         }
       } catch {}
+    }
+
+    // Começa pelas pastas raiz (já em cache)
+    for (const folder of allFolders) {
+      if (folder.name.toLowerCase().includes(lq)) {
+        results.push({ id: folder.id, name: folder.name, path: folder.name });
+      }
+      await walkFolder(folder.id, folder.name, 1);
     }
 
     if (results.length === 0) {
@@ -591,16 +598,24 @@ async function searchFolders(query) {
       return;
     }
 
-    // Monta lista de resultados
+    // Ordena: pastas raiz primeiro, depois subpastas por caminho
+    results.sort((a, b) => {
+      const aDepth = (a.path.match(/\//g) || []).length;
+      const bDepth = (b.path.match(/\//g) || []).length;
+      if (aDepth !== bDepth) return aDepth - bDepth;
+      return a.path.localeCompare(b.path, "pt-BR");
+    });
+
     let html = `<div class="sr-header">${results.length} resultado${results.length > 1 ? "s" : ""}</div>`;
     results.forEach((r, i) => {
-      const isRoot = !r.parentId;
-      const pathLabel = isRoot ? "Pasta principal" : r.path.split(" / ")[0];
-      html += `<div class="sr-item" data-index="${i}" onclick="selectSearchResult(${i})" data-id="${r.id}" data-name="${r.name}" data-path="${r.path}" data-parent="${r.parentId || ""}">
+      const parts  = r.path.split(" / ");
+      const isRoot = parts.length === 1;
+      const parent = parts.slice(0, -1).join(" / ");
+      html += `<div class="sr-item" data-index="${i}" onclick="selectSearchResult(${i})" data-id="${r.id}" data-name="${r.name}" data-path="${r.path}">
         <span class="sr-icon">${isRoot ? "📁" : "📂"}</span>
         <div>
           <div class="sr-name">${r.name}</div>
-          <div class="sr-path">${isRoot ? "Pasta principal" : pathLabel}</div>
+          <div class="sr-path">${isRoot ? "Pasta principal" : parent}</div>
         </div>
       </div>`;
     });
@@ -621,10 +636,9 @@ function selectSearchResult(index) {
   item.classList.add("selected");
 
   selectedResult = {
-    id:       item.dataset.id,
-    name:     item.dataset.name,
-    path:     item.dataset.path,
-    parentId: item.dataset.parent || null
+    id:   item.dataset.id,
+    name: item.dataset.name,
+    path: item.dataset.path
   };
 
   // Atualiza indicador de pasta
