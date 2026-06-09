@@ -92,5 +92,17 @@
         <bt:String id="TaskpaneButton.Tooltip" DefaultValue="Arquiva este email no SharePoint com o Vshare"/>
       </bt:LongStrings>
     </Resources>
+    <WebApplicationInfo>
+      <Id>e5a8fd64-798c-4040-9caf-8797976955f4</Id>
+      <Resource>api://e5a8fd64-798c-4040-9caf-8797976955f4</Resource>
+      <Scopes>
+        <Scope>openid</Scope>
+        <Scope>profile</Scope>
+        <Scope>Mail.Read</Scope>
+        <Scope>Files.ReadWrite.All</Scope>
+        <Scope>Sites.ReadWrite.All</Scope>
+        <Scope>offline_access</Scope>
+      </Scopes>
+    </WebApplicationInfo>
   </VersionOverrides>
 </OfficeApp>
