@@ -11,7 +11,7 @@ const CONFIG = {
   REDIRECT_URI: "https://elisontown-star.github.io/outlook-sharepoint-addin/taskpane.html",
 
   // URL do site SharePoint (sem barra no final)
-  SITE_URL: "https://vtecit.sharepoint.com/sites/groupfinanceiro",
+  SITE_URL: "https://vtecit.sharepoint.com/sites/armazemjuridico",
 
   // Nome da biblioteca de documentos onde os emails serão salvos
   LIBRARY_NAME: "Documentos",
