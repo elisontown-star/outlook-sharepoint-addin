@@ -1,6 +1,7 @@
 // ============================================================
-//  Outlook Add-in — Arquivar Email no SharePoint
-//  Autor: VtechIT  |  Versão: 1.1
+//  Outlook Add-in — Vshare
+//  Autor: VtechIT  |  Versão: 1.2
+//  Fix: SSO nativo do Office + localStorage para sessão persistente
 // ============================================================
 
 let msalInstance = null;
@@ -15,35 +16,109 @@ Office.onReady(async () => {
     auth: {
       clientId:    CONFIG.CLIENT_ID,
       authority:   `https://login.microsoftonline.com/${CONFIG.TENANT_ID}`,
-      redirectUri: CONFIG.REDIRECT_URI   // ← usa config.js, não hardcoded
+      redirectUri: CONFIG.REDIRECT_URI
     },
-    cache: { cacheLocation: "sessionStorage" }
+    // FIX: localStorage persiste entre sessões do painel.
+    // sessionStorage é limpo toda vez que o painel fecha — causa o login repetido.
+    cache: { cacheLocation: "localStorage", storeAuthStateInCookie: true }
   });
 
-  // Tenta login silencioso com conta já em cache
-  const accounts = msalInstance.getAllAccounts();
-  if (accounts.length > 0) {
-    try {
+  await tryAutoLogin();
+});
+
+// ── Estratégia de autenticação em 3 camadas ──────────────────
+// 1ª: SSO nativo do Office (usa a sessão já logada no Outlook — sem popup)
+// 2ª: Token silencioso via MSAL (conta em cache no localStorage)
+// 3ª: Popup de login (único fallback com interação do usuário)
+
+async function tryAutoLogin() {
+  // Camada 1: SSO nativo do Office
+  try {
+    const ssoToken = await getOfficeSSOToken();
+    if (ssoToken) {
+      // Troca o token do Office por um token da Graph API via OBO (On-Behalf-Of)
+      const graphToken = await exchangeTokenViaOBO(ssoToken);
+      if (graphToken) {
+        accessToken = graphToken;
+        await onLoggedIn();
+        return;
+      }
+    }
+  } catch (e) {
+    console.log("SSO Office não disponível, tentando MSAL cache:", e.message);
+  }
+
+  // Camada 2: Token silencioso via MSAL (localStorage)
+  try {
+    const accounts = msalInstance.getAllAccounts();
+    if (accounts.length > 0) {
       const resp = await msalInstance.acquireTokenSilent({
         scopes:  CONFIG.SCOPES,
         account: accounts[0]
       });
       accessToken = resp.accessToken;
       await onLoggedIn();
-    } catch {
-      showLoginSection();
+      return;
     }
-  } else {
-    showLoginSection();
+  } catch (e) {
+    console.log("Token silencioso falhou, exibindo botão de login:", e.message);
   }
-});
+
+  // Camada 3: Exibe botão de login (popup manual)
+  showLoginSection();
+}
+
+// ── SSO nativo do Office ─────────────────────────────────────
+function getOfficeSSOToken() {
+  return new Promise((resolve, reject) => {
+    if (!Office.context.auth || !Office.context.auth.getAccessTokenAsync) {
+      return resolve(null); // API não disponível nesta versão do Office
+    }
+    Office.context.auth.getAccessTokenAsync(
+      { allowSignInPrompt: false, allowConsentPrompt: false, forMSGraphAccess: true },
+      result => {
+        if (result.status === Office.AsyncResultStatus.Succeeded) {
+          resolve(result.value);
+        } else {
+          // Códigos 13000-13010 = SSO não configurado ou não suportado — não é erro crítico
+          resolve(null);
+        }
+      }
+    );
+  });
+}
+
+// ── OBO: troca token do Office por token da Graph API ────────
+// Necessário porque o token SSO do Office tem audience diferente da Graph API
+async function exchangeTokenViaOBO(officeToken) {
+  try {
+    const res = await fetch(
+      `https://login.microsoftonline.com/${CONFIG.TENANT_ID}/oauth2/v2.0/token`,
+      {
+        method: "POST",
+        headers: { "Content-Type": "application/x-www-form-urlencoded" },
+        body: new URLSearchParams({
+          grant_type:         "urn:ietf:params:oauth:grant-type:jwt-bearer",
+          client_id:          CONFIG.CLIENT_ID,
+          assertion:          officeToken,
+          scope:              CONFIG.SCOPES.join(" "),
+          requested_token_use: "on_behalf_of"
+        })
+      }
+    );
+    const data = await res.json();
+    return data.access_token || null;
+  } catch {
+    return null;
+  }
+}
 
 function showLoginSection() {
   document.getElementById("loginSection").style.display = "block";
   document.getElementById("folderSection").style.display = "none";
 }
 
-// ── Login ────────────────────────────────────────────────────
+// ── Login manual (popup) — último recurso ────────────────────
 async function login() {
   try {
     showStatus("Abrindo janela de login...", "loading");
@@ -64,7 +139,6 @@ async function onLoggedIn() {
   document.getElementById("folderSection").style.display = "block";
   hideStatus();
 
-  // Dados do email atual
   currentItem = Office.context.mailbox.item;
   document.getElementById("previewSubject").textContent =
     currentItem.subject || "(sem assunto)";
@@ -75,20 +149,58 @@ async function onLoggedIn() {
   await loadRootFolders();
 }
 
+// ── Renovação automática do token ────────────────────────────
+// Tokens expiram em ~1h. Antes de cada chamada, verifica e renova silenciosamente.
+async function getValidToken() {
+  try {
+    const accounts = msalInstance.getAllAccounts();
+    if (accounts.length > 0) {
+      const resp = await msalInstance.acquireTokenSilent({
+        scopes:  CONFIG.SCOPES,
+        account: accounts[0]
+      });
+      accessToken = resp.accessToken;
+    }
+  } catch {
+    // Token expirado e renovação silenciosa falhou — continua com o atual
+    // (vai falhar na chamada e mostrar erro descritivo)
+  }
+  return accessToken;
+}
+
 // ── Graph API helpers ────────────────────────────────────────
 async function graphGet(endpoint) {
-  const res = await fetch("https://graph.microsoft.com/v1.0" + endpoint, {
-    headers: { Authorization: "Bearer " + accessToken }
+  const token = await getValidToken();
+  const url = endpoint.startsWith("https://")
+    ? endpoint
+    : "https://graph.microsoft.com/v1.0" + endpoint;
+  const res = await fetch(url, {
+    headers: { Authorization: "Bearer " + token }
   });
   if (!res.ok) throw new Error(`Graph API ${res.status}: ${await res.text()}`);
   return res.json();
 }
 
+// FIX: busca TODAS as páginas de resultados automaticamente.
+// A Graph API retorna no máximo 200 itens por vez; pastas com muitos
+// itens exigem seguir @odata.nextLink até acabar.
+async function graphGetAll(endpoint) {
+  let items = [];
+  let nextUrl = endpoint;
+  while (nextUrl) {
+    const data = await graphGet(nextUrl);
+    if (Array.isArray(data.value)) items = items.concat(data.value);
+    nextUrl = data["@odata.nextLink"] || null;
+  }
+  return items;
+}
+
 async function graphPut(endpoint, body, contentType = "application/octet-stream") {
+  const token = await getValidToken();
   const res = await fetch("https://graph.microsoft.com/v1.0" + endpoint, {
     method:  "PUT",
     headers: {
-      Authorization:  "Bearer " + accessToken,
+      Authorization:  "Bearer " + token,
       "Content-Type": contentType
     },
     body
@@ -119,17 +231,15 @@ async function loadSiteAndDrive() {
 }
 
 // ── Pastas raiz ───────────────────────────────────────────────
-// FIX: $filter=folder ne null não é suportado pela Graph API em drives.
-//      Buscamos todos os filhos e filtramos no cliente.
 async function loadRootFolders() {
   showStatus("Carregando pastas...", "loading");
   try {
-    const data = await graphGet(
-      `/drives/${driveId}/root/children?$select=id,name,folder`
+    // graphGetAll segue @odata.nextLink automaticamente — lista TODAS as pastas
+    const allItems = await graphGetAll(
+      `/drives/${driveId}/root/children?$select=id,name,folder&$top=200`
     );
-
-    // Filtra apenas itens que são pastas (possuem a propriedade "folder")
-    const folders = data.value.filter(item => item.folder !== undefined);
+    const folders = allItems.filter(item => item.folder !== undefined)
+      .sort((a, b) => a.name.localeCompare(b.name, "pt-BR"));
 
     const select = document.getElementById("rootFolder");
     select.innerHTML = '<option value="">— selecione a pasta —</option>';
@@ -159,20 +269,18 @@ async function loadSubfolders(folderId) {
   const subSection = document.getElementById("subfolderSection");
   const subSelect  = document.getElementById("subFolder");
 
-  if (!folderId) {
-    subSection.style.display = "none";
-    return;
-  }
+  if (!folderId) { subSection.style.display = "none"; return; }
 
   try {
-    const data = await graphGet(
-      `/drives/${driveId}/items/${folderId}/children?$select=id,name,folder`
+    // graphGetAll segue @odata.nextLink — lista TODAS as subpastas
+    const allItems = await graphGetAll(
+      `/drives/${driveId}/items/${folderId}/children?$select=id,name,folder&$top=200`
     );
-
-    // Filtra apenas pastas no cliente
-    const subFolders = data.value.filter(item => item.folder !== undefined);
+    const subFolders = allItems.filter(item => item.folder !== undefined)
+      .sort((a, b) => a.name.localeCompare(b.name, "pt-BR"));
 
     subSelect.innerHTML = '<option value="">— raiz da pasta acima —</option>';
+
     if (subFolders.length > 0) {
       subFolders.forEach(f => {
         const opt = document.createElement("option");
@@ -208,11 +316,9 @@ async function archiveEmail() {
   try {
     const { blob, extension } = await fetchEmailBlob();
 
-    // Nome: data local (BR) + assunto sanitizado + extensão correta
     const date     = getLocalDateString();
     const subject  = (currentItem.subject || "sem-assunto")
-      .replace(/[\\/:*?"<>|]/g, "_")
-      .substring(0, 80);
+      .replace(/[\\/:*?"<>|]/g, "_").substring(0, 80);
     const fileName = `${date}_${subject}.${extension}`;
 
     showStatus("Enviando para o SharePoint...", "loading");
@@ -230,20 +336,17 @@ async function archiveEmail() {
   }
 }
 
-// ── Data local no fuso do Brasil ─────────────────────────────
-// FIX: toISOString() retorna UTC; usamos toLocaleDateString para UTC-3
+// ── Data local (fuso Brasil) ─────────────────────────────────
 function getLocalDateString() {
-  const now = new Date();
+  const now  = new Date();
   const yyyy = now.getFullYear();
   const mm   = String(now.getMonth() + 1).padStart(2, "0");
   const dd   = String(now.getDate()).padStart(2, "0");
   return `${yyyy}-${mm}-${dd}`;
 }
 
-// ── Obtém o conteúdo do email ─────────────────────────────────
-// Retorna { blob, extension } para que o nome do arquivo seja consistente
+// ── Obtém o blob do email ─────────────────────────────────────
 async function fetchEmailBlob() {
-  // Tenta primeiro via Graph API ($value retorna o EML bruto)
   try {
     const restId = Office.context.mailbox.convertToRestId
       ? Office.context.mailbox.convertToRestId(
@@ -252,33 +355,26 @@ async function fetchEmailBlob() {
         )
       : currentItem.itemId;
 
+    const token = await getValidToken();
     const res = await fetch(
       `https://graph.microsoft.com/v1.0/me/messages/${restId}/$value`,
-      { headers: { Authorization: "Bearer " + accessToken } }
+      { headers: { Authorization: "Bearer " + token } }
     );
-
-    if (res.ok) {
-      // Graph API retorna EML (formato RFC-822) → extensão .eml
-      return { blob: await res.blob(), extension: "eml" };
-    }
+    if (res.ok) return { blob: await res.blob(), extension: "eml" };
   } catch (err) {
     console.warn("Graph $value falhou, usando fallback:", err);
   }
-
-  // Fallback: constrói o arquivo a partir dos dados do Office.js
   return await buildFallbackEmail();
 }
 
-// ── Fallback: constrói arquivo de email via Office.js ─────────
+// ── Fallback EML via Office.js ───────────────────────────────
 async function buildFallbackEmail() {
   const item = Office.context.mailbox.item;
-
   const body = await new Promise(resolve => {
     item.body.getAsync(Office.CoercionType.Html, result => {
       resolve(
         result.status === Office.AsyncResultStatus.Succeeded
-          ? result.value
-          : "(corpo não disponível)"
+          ? result.value : "(corpo não disponível)"
       );
     });
   });
@@ -286,40 +382,22 @@ async function buildFallbackEmail() {
   const from    = item.from ? `${item.from.displayName} <${item.from.emailAddress}>` : "";
   const subject = item.subject || "(sem assunto)";
   const date    = new Date().toUTCString();
-  const toList  = (item.to || [])
-    .map(r => `${r.displayName} <${r.emailAddress}>`)
-    .join(", ");
+  const toList  = (item.to || []).map(r => `${r.displayName} <${r.emailAddress}>`).join(", ");
 
-  // Tenta criar .msg usando CFB se disponível
   if (typeof CFB !== "undefined") {
     try {
-      const blob = buildMsgFile({ from, subject, date, toList, body });
-      return { blob, extension: "msg" };
-    } catch (e) {
-      console.warn("CFB falhou, usando EML simples:", e);
-    }
+      return { blob: buildMsgFile({ from, subject, date, toList, body }), extension: "msg" };
+    } catch (e) { console.warn("CFB falhou:", e); }
   }
 
-  // Último recurso: EML puro (RFC-822)
-  const eml = [
-    `From: ${from}`,
-    `To: ${toList}`,
-    `Subject: ${subject}`,
-    `Date: ${date}`,
-    `MIME-Version: 1.0`,
-    `Content-Type: text/html; charset=utf-8`,
-    ``,
-    body
+  const eml = [`From: ${from}`, `To: ${toList}`, `Subject: ${subject}`,
+    `Date: ${date}`, `MIME-Version: 1.0`, `Content-Type: text/html; charset=utf-8`, ``, body
   ].join("\r\n");
 
-  return {
-    blob: new Blob([eml], { type: "message/rfc822" }),
-    extension: "eml"   // FIX: era ".msg" mesmo sendo EML
-  };
+  return { blob: new Blob([eml], { type: "message/rfc822" }), extension: "eml" };
 }
 
-// ── Construtor de .msg via CFB ────────────────────────────────
-// FIX: adicionado stream __nameid_version1.0 obrigatório no formato .msg
+// ── Construtor .msg via CFB ───────────────────────────────────
 function buildMsgFile({ from, subject, date, toList, body }) {
   function encodeUTF16LE(str) {
     const buf  = new ArrayBuffer((str.length + 1) * 2);
@@ -330,28 +408,24 @@ function buildMsgFile({ from, subject, date, toList, body }) {
   }
 
   const cfb = CFB.utils.cfb_new();
-
-  // Stream obrigatório — sem ele leitores MAPI recusam o arquivo
   CFB.utils.cfb_add(cfb, "__nameid_version1.0", new Uint8Array(0));
 
   const stringProps = [
-    { tag: 0x0037, type: 0x001F, value: subject },    // PR_SUBJECT
-    { tag: 0x1013, type: 0x001F, value: body },        // PR_BODY_HTML
-    { tag: 0x0C1A, type: 0x001F, value: from },        // PR_SENDER_NAME
-    { tag: 0x0E04, type: 0x001F, value: toList },      // PR_DISPLAY_TO
-    { tag: 0x0070, type: 0x001F, value: subject },     // PR_CONVERSATION_TOPIC
-    { tag: 0x0039, type: 0x001F, value: date },        // PR_CLIENT_SUBMIT_TIME (texto)
+    { tag: 0x0037, type: 0x001F, value: subject },
+    { tag: 0x1013, type: 0x001F, value: body },
+    { tag: 0x0C1A, type: 0x001F, value: from },
+    { tag: 0x0E04, type: 0x001F, value: toList },
+    { tag: 0x0070, type: 0x001F, value: subject },
+    { tag: 0x0039, type: 0x001F, value: date },
   ];
 
   const fixedProps = [
-    { tag: 0x0017, type: 0x0003, value: 0x00000001 }, // PR_IMPORTANCE = high
-    { tag: 0x0026, type: 0x0003, value: 0x00000000 }, // PR_SENSITIVITY = normal
+    { tag: 0x0017, type: 0x0003, value: 0x00000001 },
+    { tag: 0x0026, type: 0x0003, value: 0x00000000 },
   ];
 
-  const headerSize = 32 + fixedProps.length * 16;
-  const headerBuf  = new ArrayBuffer(headerSize);
+  const headerBuf  = new ArrayBuffer(32 + fixedProps.length * 16);
   const headerView = new DataView(headerBuf);
-
   let offset = 32;
   fixedProps.forEach(p => {
     headerView.setUint16(offset,      p.type,  true);
@@ -363,11 +437,9 @@ function buildMsgFile({ from, subject, date, toList, body }) {
   });
 
   CFB.utils.cfb_add(cfb, "__properties_version1.0", new Uint8Array(headerBuf));
-
   stringProps.forEach(p => {
-    const encoded = encodeUTF16LE(p.value || "");
-    const name = `__substg1.0_${p.tag.toString(16).toUpperCase().padStart(4, "0")}${p.type.toString(16).toUpperCase().padStart(4, "0")}`;
-    CFB.utils.cfb_add(cfb, name, encoded);
+    const name = `__substg1.0_${p.tag.toString(16).toUpperCase().padStart(4,"0")}${p.type.toString(16).toUpperCase().padStart(4,"0")}`;
+    CFB.utils.cfb_add(cfb, name, encodeUTF16LE(p.value || ""));
   });
 
   const out = CFB.write(cfb, { type: "array" });
