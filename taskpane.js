@@ -560,7 +560,7 @@ function onSearchInput(value) {
   showNormalFolderUI(false);
   showSearchResults('<div class="sr-loading"><span class="loader" style="border-color:rgba(33,150,243,.3);border-top-color:#2196f3"></span>Buscando...</div>');
 
-  searchTimer = setTimeout(() => searchFolders(value.trim()), 400);
+  searchTimer = setTimeout(() => searchFolders(value.trim()), 500);
 }
 
 function clearSearch() {
@@ -593,46 +593,43 @@ function hideSearchResults() {
 // Busca recursiva em TODOS os níveis da biblioteca
 async function searchFolders(query) {
   try {
-    const lq = query.toLowerCase();
-    const results = [];
+    // BUSCA RÁPIDA: usa o endpoint nativo de search da Graph API.
+    // Em vez de varrer pasta por pasta (lento), o SharePoint faz a busca
+    // no servidor e devolve tudo de uma vez numa única chamada.
+    const endpoint =
+      `/drives/${driveId}/root/search(q='${encodeURIComponent(query)}')` +
+      `?$select=id,name,folder,parentReference&$top=50`;
 
-    // Percorre recursivamente a árvore de pastas
-    async function walkFolder(folderId, folderPath, depth) {
-      if (depth > 6) return; // limite de segurança para evitar loops infinitos
-      try {
-        const items = await graphGetAll(
-          `/drives/${driveId}/items/${folderId}/children?$select=id,name,folder&$top=200`
-        );
-        const subFolders = items.filter(isFolder);
-        for (const sub of subFolders) {
-          const subPath = `${folderPath} / ${sub.name}`;
-          if (sub.name.toLowerCase().includes(lq)) {
-            results.push({ id: sub.id, name: sub.name, path: subPath });
-          }
-          // Continua descendo na árvore
-          await walkFolder(sub.id, subPath, depth + 1);
-        }
-      } catch {}
-    }
+    const items = await graphGetAll(endpoint);
 
-    // Começa pelas pastas raiz (já em cache)
-    for (const folder of allFolders) {
-      if (folder.name.toLowerCase().includes(lq)) {
-        results.push({ id: folder.id, name: folder.name, path: folder.name });
-      }
-      await walkFolder(folder.id, folder.name, 1);
-    }
+    // Filtra só pastas (a busca também retorna arquivos)
+    const folders = items.filter(isFolder);
 
-    if (results.length === 0) {
+    if (folders.length === 0) {
       showSearchResults(`<div class="sr-empty">Nenhuma pasta encontrada para "${query}"</div>`);
       return;
     }
 
-    // Ordena: pastas raiz primeiro, depois subpastas por caminho
+    // Monta o caminho a partir do parentReference
+    const results = folders.map(f => {
+      let path = f.name;
+      const pr = f.parentReference;
+      if (pr && pr.path) {
+        // pr.path vem como "/drives/{id}/root:/Pasta/Subpasta"
+        const after = pr.path.split("root:")[1];
+        if (after) {
+          const clean = decodeURIComponent(after).replace(/^\//, "");
+          if (clean) path = `${clean} / ${f.name}`.replace(/\//g, " / ");
+        }
+      }
+      return { id: f.id, name: f.name, path };
+    });
+
+    // Ordena por profundidade do caminho e depois alfabético
     results.sort((a, b) => {
-      const aDepth = (a.path.match(/\//g) || []).length;
-      const bDepth = (b.path.match(/\//g) || []).length;
-      if (aDepth !== bDepth) return aDepth - bDepth;
+      const ad = (a.path.match(/\//g) || []).length;
+      const bd = (b.path.match(/\//g) || []).length;
+      if (ad !== bd) return ad - bd;
       return a.path.localeCompare(b.path, "pt-BR");
     });
 
