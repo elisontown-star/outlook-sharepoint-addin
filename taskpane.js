@@ -327,8 +327,10 @@ async function loadRootFolders() {
 function updateFolderIndicator() {
   const rootSel = document.getElementById("rootFolder");
   const subSel  = document.getElementById("subFolder");
+  const subSubSel = document.getElementById("subSubFolder");
   const rootName = rootSel.options[rootSel.selectedIndex]?.text || "";
   const subName  = subSel.options[subSel.selectedIndex]?.text || "";
+  const subSubName = subSubSel.options[subSubSel.selectedIndex]?.text || "";
   const indicator = document.getElementById("folderIndicator");
 
   if (!rootSel.value) {
@@ -336,14 +338,57 @@ function updateFolderIndicator() {
     return;
   }
 
-  const path = subSel.value ? `${rootName} / ${subName}` : rootName;
+  let path = rootName;
+  if (subSel.value) path += ` / ${subName}`;
+  if (subSubSel.value) path += ` / ${subSubName}`;
+
   document.getElementById("folderPathText").textContent = path;
   indicator.style.display = "flex";
 }
 
 async function onRootFolderChange(folderId) {
+  // Limpa o 3º nível ao trocar a pasta raiz
+  document.getElementById("subSubfolderSection").style.display = "none";
+  document.getElementById("subSubFolder").innerHTML = '<option value="">— raiz da subpasta acima —</option>';
   updateFolderIndicator();
   await loadSubfolders(folderId);
+}
+
+// Chamado ao selecionar uma subpasta: carrega as sub-subpastas (3º nível)
+async function onSubFolderChange(folderId) {
+  const subSubSection = document.getElementById("subSubfolderSection");
+  const subSubSelect  = document.getElementById("subSubFolder");
+
+  // Reseta o 3º nível
+  subSubSelect.innerHTML = '<option value="">— raiz da subpasta acima —</option>';
+  subSubSection.style.display = "none";
+
+  if (folderId) {
+    try {
+      const allItems = await graphGetAll(
+        `/drives/${driveId}/items/${folderId}/children?$select=id,name,folder&$top=200`
+      );
+      const subSubFolders = allItems.filter(isFolder)
+        .sort((a, b) => a.name.localeCompare(b.name, "pt-BR"));
+
+      console.log(`[Vshare] Sub-subpastas encontradas: ${subSubFolders.length}`);
+
+      if (subSubFolders.length > 0) {
+        subSubFolders.forEach(f => {
+          const opt = document.createElement("option");
+          opt.value = f.id;
+          opt.textContent = f.name;
+          subSubSelect.appendChild(opt);
+        });
+        // Só mostra o campo se houver sub-subpastas
+        subSubSection.style.display = "block";
+      }
+    } catch (e) {
+      console.warn("[Vshare] Erro ao carregar sub-subpastas:", e.message);
+    }
+  }
+
+  updateFolderIndicator();
 }
 
 async function loadSubfolders(folderId) {
@@ -363,6 +408,10 @@ async function loadSubfolders(folderId) {
     console.log(`[Vshare] Subpastas encontradas: ${subFolders.length} de ${allItems.length} itens`);
 
     subSelect.innerHTML = '<option value="">— raiz da pasta acima —</option>';
+
+    // Reseta o 3º nível sempre que recarrega as subpastas
+    document.getElementById("subSubfolderSection").style.display = "none";
+    document.getElementById("subSubFolder").innerHTML = '<option value="">— raiz da subpasta acima —</option>';
 
     if (subFolders.length > 0) {
       subFolders.forEach(f => {
@@ -389,13 +438,15 @@ async function archiveEmail() {
   if (selectedResult) {
     targetFolderId = selectedResult.id;
   } else {
-    const rootId = document.getElementById("rootFolder").value;
-    const subId  = document.getElementById("subFolder").value;
+    const rootId   = document.getElementById("rootFolder").value;
+    const subId    = document.getElementById("subFolder").value;
+    const subSubId = document.getElementById("subSubFolder").value;
     if (!rootId) {
       showStatus("Selecione uma pasta antes de arquivar.", "error");
       return;
     }
-    targetFolderId = subId || rootId;
+    // Usa o nível mais profundo selecionado
+    targetFolderId = subSubId || subId || rootId;
   }
   const btn = document.getElementById("archiveBtn");
   btn.innerHTML = '<span class="loader"></span>Arquivando...';
@@ -560,7 +611,7 @@ function onSearchInput(value) {
   showNormalFolderUI(false);
   showSearchResults('<div class="sr-loading"><span class="loader" style="border-color:rgba(33,150,243,.3);border-top-color:#2196f3"></span>Buscando...</div>');
 
-  searchTimer = setTimeout(() => searchFolders(value.trim()), 500);
+  searchTimer = setTimeout(() => searchFolders(value.trim()), 400);
 }
 
 function clearSearch() {
@@ -593,89 +644,34 @@ function hideSearchResults() {
 // Busca recursiva em TODOS os níveis da biblioteca
 async function searchFolders(query) {
   try {
-    let results = [];
+    const lq = query.toLowerCase();
+    const results = [];
 
-    // Proteção: se o drive ainda não carregou, não dá pra buscar
-    if (!driveId) {
-      console.warn("[Vshare] driveId ainda não carregado");
-      showSearchResults('<div class="sr-empty">Aguarde o carregamento das pastas...</div>');
-      return;
-    }
-
-    // ── Tentativa 1: endpoint nativo de busca da Graph API (rápido) ──
-    try {
-      const endpoint =
-        `/drives/${driveId}/root/search(q='${encodeURIComponent(query)}')?$top=50`;
-      console.log("[Vshare] Buscando via API:", endpoint);
-
-      const items = await graphGetAll(endpoint);
-      console.log(`[Vshare] API retornou ${items.length} itens`);
-
-      const folders = items.filter(isFolder);
-      results = folders.map(f => {
-        let path = f.name;
-        const pr = f.parentReference;
-        if (pr && pr.path) {
-          const after = pr.path.split("root:")[1];
-          if (after) {
-            const clean = decodeURIComponent(after).replace(/^\//, "");
-            if (clean) path = `${clean}/${f.name}`.split("/").join(" / ");
+    // Percorre recursivamente a árvore de pastas
+    async function walkFolder(folderId, folderPath, depth) {
+      if (depth > 6) return; // limite de segurança para evitar loops infinitos
+      try {
+        const items = await graphGetAll(
+          `/drives/${driveId}/items/${folderId}/children?$select=id,name,folder&$top=200`
+        );
+        const subFolders = items.filter(isFolder);
+        for (const sub of subFolders) {
+          const subPath = `${folderPath} / ${sub.name}`;
+          if (sub.name.toLowerCase().includes(lq)) {
+            results.push({ id: sub.id, name: sub.name, path: subPath });
           }
+          // Continua descendo na árvore
+          await walkFolder(sub.id, subPath, depth + 1);
         }
-        return { id: f.id, name: f.name, path };
-      });
-    } catch (apiErr) {
-      console.warn("[Vshare] Busca via API falhou, usando cache local:", apiErr.message);
+      } catch {}
     }
 
-    // ── Tentativa 2 (fallback): busca RECURSIVA em TODOS os níveis ──
-    // Varre a árvore inteira, mas processando cada nível em PARALELO
-    // (Promise.all) para manter a velocidade mesmo em bibliotecas grandes.
-    if (results.length === 0) {
-      const lq = query.toLowerCase();
-      console.log("[Vshare] Fallback: busca recursiva em todos os níveis...");
-
-      // Pastas raiz que combinam
-      allFolders.forEach(f => {
-        if (f.name.toLowerCase().includes(lq)) {
-          results.push({ id: f.id, name: f.name, path: f.name });
-        }
-      });
-
-      // Função recursiva: processa todas as subpastas de um nível em paralelo
-      async function searchLevel(folderId, basePath) {
-        let found = [];
-        try {
-          const items = await graphGetAll(
-            `/drives/${driveId}/items/${folderId}/children?$select=id,name,folder&$top=200`
-          );
-          const subFolders = items.filter(isFolder);
-
-          // Processa todas as subpastas deste nível ao mesmo tempo
-          const deeper = await Promise.all(
-            subFolders.map(async sub => {
-              const subPath = `${basePath} / ${sub.name}`;
-              const matches = [];
-              if (sub.name.toLowerCase().includes(lq)) {
-                matches.push({ id: sub.id, name: sub.name, path: subPath });
-              }
-              // Desce recursivamente (também em paralelo)
-              const childMatches = await searchLevel(sub.id, subPath);
-              return matches.concat(childMatches);
-            })
-          );
-          deeper.forEach(arr => found = found.concat(arr));
-        } catch {}
-        return found;
+    // Começa pelas pastas raiz (já em cache)
+    for (const folder of allFolders) {
+      if (folder.name.toLowerCase().includes(lq)) {
+        results.push({ id: folder.id, name: folder.name, path: folder.name });
       }
-
-      // Dispara a busca em todas as pastas raiz simultaneamente
-      const allLevels = await Promise.all(
-        allFolders.map(root => searchLevel(root.id, root.name))
-      );
-      allLevels.forEach(arr => results.push(...arr));
-
-      console.log(`[Vshare] Fallback recursivo encontrou ${results.length} pastas`);
+      await walkFolder(folder.id, folder.name, 1);
     }
 
     if (results.length === 0) {
@@ -683,11 +679,11 @@ async function searchFolders(query) {
       return;
     }
 
-    // Ordena por profundidade do caminho e depois alfabético
+    // Ordena: pastas raiz primeiro, depois subpastas por caminho
     results.sort((a, b) => {
-      const ad = (a.path.match(/ \/ /g) || []).length;
-      const bd = (b.path.match(/ \/ /g) || []).length;
-      if (ad !== bd) return ad - bd;
+      const aDepth = (a.path.match(/\//g) || []).length;
+      const bDepth = (b.path.match(/\//g) || []).length;
+      if (aDepth !== bDepth) return aDepth - bDepth;
       return a.path.localeCompare(b.path, "pt-BR");
     });
 
@@ -777,3 +773,4 @@ window.onRootFolderChange = onRootFolderChange;
 window.updateFolderIndicator = updateFolderIndicator;
 window.archiveEmail = archiveEmail;
 window.selectSearchResult = selectSearchResult;
+window.onSubFolderChange = onSubFolderChange;
