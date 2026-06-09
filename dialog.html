@@ -1,0 +1,137 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8"/>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>Vshare — Arquivar</title>
+
+  <script src="https://appsforoffice.microsoft.com/lib/1/hosted/office.js"></script>
+  <script src="https://alcdn.msauth.net/browser/2.38.0/js/msal-browser.min.js"></script>
+  <script src="config.js?v=2.9"></script>
+
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      font-family: "Segoe UI", sans-serif;
+      font-size: 13px;
+      background: #1a1a2e;
+      color: #e0e0e0;
+      padding: 16px;
+      min-height: 100vh;
+    }
+    .header { display: flex; align-items: center; gap: 10px; margin-bottom: 16px; }
+    .header .ico {
+      width: 32px; height: 32px; background: #fff; border-radius: 8px;
+      display: flex; align-items: center; justify-content: center; padding: 3px;
+    }
+    .header .ico img { width: 24px; height: 24px; object-fit: contain; }
+    .header h1 { font-size: 15px; color: #fff; font-weight: 600; }
+    .header p { font-size: 11px; color: #8892a4; }
+
+    .question { font-size: 13px; color: #e0e0e0; margin-bottom: 14px; line-height: 1.5; }
+
+    .vs-label {
+      font-size: 11px; font-weight: 600; color: #8892a4;
+      text-transform: uppercase; letter-spacing: 0.4px;
+      margin-bottom: 6px; display: block;
+    }
+    .select-wrap { position: relative; margin-bottom: 12px; }
+    select {
+      width: 100%; padding: 8px 30px 8px 10px;
+      background: #16213e; border: 1px solid #2a3a5c; border-radius: 8px;
+      color: #e0e0e0; font-size: 13px; appearance: none; cursor: pointer;
+    }
+    select:focus { outline: none; border-color: #0078d4; }
+    .chevron { position: absolute; right: 10px; top: 50%; transform: translateY(-50%); color: #8892a4; pointer-events: none; }
+
+    .search-wrap { position: relative; margin-bottom: 12px; }
+    #searchInput {
+      width: 100%; padding: 8px 10px 8px 32px;
+      background: #fff; border: 1px solid #0a2472; border-radius: 2px;
+      color: #333; font-size: 13px;
+    }
+    #searchInput:focus { outline: none; border-color: #0078d4; }
+    .search-icon { position: absolute; left: 9px; top: 50%; transform: translateY(-50%); pointer-events: none; }
+
+    .btn {
+      width: 100%; padding: 11px; border: none; border-radius: 8px;
+      font-size: 13px; font-weight: 600; cursor: pointer; margin-bottom: 8px;
+      display: flex; align-items: center; justify-content: center; gap: 8px;
+      transition: background .2s, transform .1s;
+    }
+    .btn:active { transform: scale(0.98); }
+    .btn-primary { background: #0078d4; color: #fff; }
+    .btn-primary:hover { background: #005a9e; }
+    .btn-secondary { background: #2a3a5c; color: #e0e0e0; }
+    .btn-secondary:hover { background: #3a4a6c; }
+    .btn-ghost { background: transparent; color: #8892a4; border: 1px solid #2a3a5c; }
+    .btn-ghost:hover { border-color: #e74c3c; color: #e74c3c; }
+
+    #status {
+      margin-top: 10px; padding: 8px 12px; border-radius: 8px;
+      font-size: 12px; display: none; line-height: 1.5;
+    }
+    #status.success { background: #0d2b1a; color: #1db954; border: 1px solid #1db954; }
+    #status.error   { background: #2b0d0d; color: #e74c3c; border: 1px solid #e74c3c; }
+    #status.loading { background: #1a2b3c; color: #2196f3; border: 1px solid #2196f3; }
+
+    .loader { display: inline-block; width: 12px; height: 12px; border: 2px solid rgba(255,255,255,.3); border-top-color: #fff; border-radius: 50%; animation: spin .6s linear infinite; }
+    @keyframes spin { to { transform: rotate(360deg); } }
+
+    #folderArea { display: none; }
+  </style>
+</head>
+<body>
+
+  <div class="header">
+    <div class="ico"><img src="icon-64.png?v=2.9" alt="Vshare"/></div>
+    <div>
+      <h1>Vshare</h1>
+      <p>Arquivar antes de enviar?</p>
+    </div>
+  </div>
+
+  <p class="question">
+    Deseja arquivar este email no SharePoint antes de enviá-lo?
+  </p>
+
+  <div id="folderArea">
+    <div class="search-wrap">
+      <span class="search-icon">
+        <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="#605e5c" stroke-width="1.5">
+          <circle cx="7" cy="7" r="5"/><line x1="11" y1="11" x2="14.5" y2="14.5"/>
+        </svg>
+      </span>
+      <input type="text" id="searchInput" placeholder="Buscar pasta..." autocomplete="off"/>
+    </div>
+
+    <label class="vs-label" for="rootFolder">Pasta principal</label>
+    <div class="select-wrap">
+      <select id="rootFolder"><option value="">Carregando...</option></select>
+      <span class="chevron">▾</span>
+    </div>
+
+    <div id="subWrap" style="display:none;">
+      <label class="vs-label" for="subFolder">Subpasta</label>
+      <div class="select-wrap">
+        <select id="subFolder"><option value="">— raiz da pasta acima —</option></select>
+        <span class="chevron">▾</span>
+      </div>
+    </div>
+  </div>
+
+  <button class="btn btn-primary" id="archiveSendBtn" onclick="archiveAndSend()">
+    Arquivar e Enviar
+  </button>
+  <button class="btn btn-secondary" onclick="sendOnly()">
+    Apenas Enviar
+  </button>
+  <button class="btn btn-ghost" onclick="cancelSend()">
+    Cancelar
+  </button>
+
+  <div id="status"></div>
+
+  <script src="dialog.js?v=2.9"></script>
+</body>
+</html>
