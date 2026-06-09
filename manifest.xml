@@ -5,7 +5,7 @@
   xmlns:bt="http://schemas.microsoft.com/office/officeappbasictypes/1.0"
   xsi:type="MailApp">
   <Id>a1b2c3d4-e5f6-7890-abcd-ef1234567890</Id>
-  <Version>3.0.0</Version>
+  <Version>2.5.0</Version>
   <ProviderName>VtechIT</ProviderName>
   <DefaultLocale>pt-BR</DefaultLocale>
   <DisplayName DefaultValue="Vshare"/>
@@ -39,7 +39,6 @@
     <Rule xsi:type="ItemIs" ItemType="Message" FormType="Read"/>
   </Rule>
   <DisableEntityHighlighting>false</DisableEntityHighlighting>
-
   <VersionOverrides xmlns="http://schemas.microsoft.com/office/mailappversionoverrides" xmlns:bt="http://schemas.microsoft.com/office/officeappbasictypes/1.0" xsi:type="VersionOverridesV1_0">
     <Requirements>
       <bt:Sets DefaultMinVersion="1.3">
