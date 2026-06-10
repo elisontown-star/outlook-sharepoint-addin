@@ -9,8 +9,8 @@
   <script src="https://alcdn.msauth.net/browser/2.38.0/js/msal-browser.min.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/cfb@1.2.2/dist/cfb.min.js"></script>
 
-  <script src="config.js?v=3.7"></script>
-  <script src="taskpane.js?v=3.7" defer></script>
+  <script src="config.js?v=3.9"></script>
+  <script src="taskpane.js?v=3.9" defer></script>
 
   <style>
     *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
@@ -161,7 +161,6 @@
 
     /* ── Subpasta ── */
     #subfolderSection { display: none; }
-    #subSubfolderSection { display: none; }
 
     /* ── Botão arquivar ── */
     #archiveBtn {
@@ -380,18 +379,8 @@
       <div id="subfolderSection">
         <label class="vs-label" for="subFolder">Subpasta</label>
         <div class="vs-select-wrap">
-          <select id="subFolder" onchange="onSubFolderChange(this.value)">
+          <select id="subFolder" onchange="updateFolderIndicator()">
             <option value="">— raiz da pasta acima —</option>
-          </select>
-          <span class="vs-chevron">▾</span>
-        </div>
-      </div>
-
-      <div id="subSubfolderSection">
-        <label class="vs-label" for="subSubFolder">Sub-subpasta</label>
-        <div class="vs-select-wrap">
-          <select id="subSubFolder" onchange="updateFolderIndicator()">
-            <option value="">— raiz da subpasta acima —</option>
           </select>
           <span class="vs-chevron">▾</span>
         </div>
@@ -400,6 +389,12 @@
       <div id="folderIndicator">
         <span class="fi-icon">📁</span>
         <div id="folderPath">Destino: <span id="folderPathText">—</span></div>
+      </div>
+
+      <label class="vs-label" for="customName" style="margin-top:12px;">Renomear</label>
+      <div class="vs-rename-wrap">
+        <input type="text" id="customName" placeholder="Deixe em branco para nome automático" autocomplete="off"/>
+        <span class="rename-ext" id="renameExt">.eml</span>
       </div>
 
       <button id="archiveBtn" onclick="archiveEmail()">
@@ -416,7 +411,7 @@
 
   <div style="text-align:center; padding:8px 12px; background:#fff;">
     <img src="logo-vtech.png?v=2.8" alt="VTECH IT" style="height:22px; vertical-align:middle;"/>
-    <span style="font-size:9px; color:#888; margin-left:8px; vertical-align:middle;">Vshare v3.7</span>
+    <span style="font-size:9px; color:#888; margin-left:8px; vertical-align:middle;">Vshare v3.9</span>
   </div>
 
 </body>

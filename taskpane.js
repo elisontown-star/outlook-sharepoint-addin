@@ -327,10 +327,8 @@ async function loadRootFolders() {
 function updateFolderIndicator() {
   const rootSel = document.getElementById("rootFolder");
   const subSel  = document.getElementById("subFolder");
-  const subSubSel = document.getElementById("subSubFolder");
   const rootName = rootSel.options[rootSel.selectedIndex]?.text || "";
   const subName  = subSel.options[subSel.selectedIndex]?.text || "";
-  const subSubName = subSubSel.options[subSubSel.selectedIndex]?.text || "";
   const indicator = document.getElementById("folderIndicator");
 
   if (!rootSel.value) {
@@ -338,57 +336,14 @@ function updateFolderIndicator() {
     return;
   }
 
-  let path = rootName;
-  if (subSel.value) path += ` / ${subName}`;
-  if (subSubSel.value) path += ` / ${subSubName}`;
-
+  const path = subSel.value ? `${rootName} / ${subName}` : rootName;
   document.getElementById("folderPathText").textContent = path;
   indicator.style.display = "flex";
 }
 
 async function onRootFolderChange(folderId) {
-  // Limpa o 3º nível ao trocar a pasta raiz
-  document.getElementById("subSubfolderSection").style.display = "none";
-  document.getElementById("subSubFolder").innerHTML = '<option value="">— raiz da subpasta acima —</option>';
   updateFolderIndicator();
   await loadSubfolders(folderId);
-}
-
-// Chamado ao selecionar uma subpasta: carrega as sub-subpastas (3º nível)
-async function onSubFolderChange(folderId) {
-  const subSubSection = document.getElementById("subSubfolderSection");
-  const subSubSelect  = document.getElementById("subSubFolder");
-
-  // Reseta o 3º nível
-  subSubSelect.innerHTML = '<option value="">— raiz da subpasta acima —</option>';
-  subSubSection.style.display = "none";
-
-  if (folderId) {
-    try {
-      const allItems = await graphGetAll(
-        `/drives/${driveId}/items/${folderId}/children?$select=id,name,folder&$top=200`
-      );
-      const subSubFolders = allItems.filter(isFolder)
-        .sort((a, b) => a.name.localeCompare(b.name, "pt-BR"));
-
-      console.log(`[Vshare] Sub-subpastas encontradas: ${subSubFolders.length}`);
-
-      if (subSubFolders.length > 0) {
-        subSubFolders.forEach(f => {
-          const opt = document.createElement("option");
-          opt.value = f.id;
-          opt.textContent = f.name;
-          subSubSelect.appendChild(opt);
-        });
-        // Só mostra o campo se houver sub-subpastas
-        subSubSection.style.display = "block";
-      }
-    } catch (e) {
-      console.warn("[Vshare] Erro ao carregar sub-subpastas:", e.message);
-    }
-  }
-
-  updateFolderIndicator();
 }
 
 async function loadSubfolders(folderId) {
@@ -408,10 +363,6 @@ async function loadSubfolders(folderId) {
     console.log(`[Vshare] Subpastas encontradas: ${subFolders.length} de ${allItems.length} itens`);
 
     subSelect.innerHTML = '<option value="">— raiz da pasta acima —</option>';
-
-    // Reseta o 3º nível sempre que recarrega as subpastas
-    document.getElementById("subSubfolderSection").style.display = "none";
-    document.getElementById("subSubFolder").innerHTML = '<option value="">— raiz da subpasta acima —</option>';
 
     if (subFolders.length > 0) {
       subFolders.forEach(f => {
@@ -438,15 +389,13 @@ async function archiveEmail() {
   if (selectedResult) {
     targetFolderId = selectedResult.id;
   } else {
-    const rootId   = document.getElementById("rootFolder").value;
-    const subId    = document.getElementById("subFolder").value;
-    const subSubId = document.getElementById("subSubFolder").value;
+    const rootId = document.getElementById("rootFolder").value;
+    const subId  = document.getElementById("subFolder").value;
     if (!rootId) {
       showStatus("Selecione uma pasta antes de arquivar.", "error");
       return;
     }
-    // Usa o nível mais profundo selecionado
-    targetFolderId = subSubId || subId || rootId;
+    targetFolderId = subId || rootId;
   }
   const btn = document.getElementById("archiveBtn");
   btn.innerHTML = '<span class="loader"></span>Arquivando...';
@@ -456,10 +405,19 @@ async function archiveEmail() {
   try {
     const { blob, extension } = await fetchEmailBlob();
 
-    const date     = getLocalDateString();
-    const subject  = (currentItem.subject || "sem-assunto")
-      .replace(/[\\/:*?"<>|]/g, "_").substring(0, 80);
-    const fileName = `${date}_${subject}.${extension}`;
+    // Nome customizado (opcional) ou nome automático (data + assunto)
+    const customName = document.getElementById("customName").value.trim();
+    let fileName;
+    if (customName) {
+      // Sanitiza o nome digitado e garante a extensão correta
+      const clean = customName.replace(/[\\/:*?"<>|]/g, "_").substring(0, 100);
+      fileName = clean.toLowerCase().endsWith(`.${extension}`) ? clean : `${clean}.${extension}`;
+    } else {
+      const date    = getLocalDateString();
+      const subject = (currentItem.subject || "sem-assunto")
+        .replace(/[\\/:*?"<>|]/g, "_").substring(0, 80);
+      fileName = `${date}_${subject}.${extension}`;
+    }
 
     showStatus("Enviando para o SharePoint...", "loading");
     await graphPut(
@@ -468,6 +426,7 @@ async function archiveEmail() {
     );
 
     showStatus(`Email arquivado com sucesso em "${fileName}"`, "success");
+    document.getElementById("customName").value = "";
     selectedResult = null;
   } catch (e) {
     showStatus("Erro ao arquivar: " + e.message, "error");
@@ -773,4 +732,3 @@ window.onRootFolderChange = onRootFolderChange;
 window.updateFolderIndicator = updateFolderIndicator;
 window.archiveEmail = archiveEmail;
 window.selectSearchResult = selectSearchResult;
-window.onSubFolderChange = onSubFolderChange;
