@@ -10,7 +10,7 @@
   <script src="https://cdn.jsdelivr.net/npm/cfb@1.2.2/dist/cfb.min.js"></script>
 
   <script src="config.js?v=2.8"></script>
-  <script src="taskpane.js?v=4.4cb" defer></script>
+  <script src="taskpane.js?v=4.6cb" defer></script>
 
   <style>
     *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
@@ -51,12 +51,11 @@
       border: 1px solid #2a3a5c;
       color: #8892a4;
       border-radius: 6px;
-      padding: 4px 9px;
-      font-size: 11px;
+      padding: 6px;
       cursor: pointer;
       display: none;
       align-items: center;
-      gap: 4px;
+      justify-content: center;
       transition: border-color .2s, color .2s;
     }
     #logoutBtn:hover { border-color: #e74c3c; color: #e74c3c; }
@@ -79,6 +78,15 @@
     }
     #userName { font-size: 12px; color: #8892a4; }
     #userName span { color: #e0e0e0; font-weight: 500; }
+    .lang-toggle { margin-left: auto; display: flex; gap: 3px; }
+    .lang-btn {
+      padding: 2px 7px; font-size: 10px; font-weight: 600;
+      border: 1px solid #2a3a5c; border-radius: 4px;
+      background: transparent; color: #8892a4; cursor: pointer;
+      transition: all .15s;
+    }
+    .lang-btn:hover { border-color: #0078d4; }
+    .lang-btn.active { background: #0078d4; color: #fff; border-color: #0078d4; }
 
     /* ── Body ── */
     #vs-body { padding: 14px 16px; flex: 1; }
@@ -325,11 +333,15 @@
       <div class="vs-icon"><img src="icon-64.png?v=2.8" alt="Vshare" style="width:24px;height:24px;object-fit:contain;"/></div>
       <div>
         <div class="vs-title">Vshare</div>
-        <div class="vs-subtitle">Arquivar no SharePoint</div>
+        <div class="vs-subtitle" data-i18n="subtitle">Arquivar no SharePoint</div>
       </div>
     </div>
     <button id="logoutBtn" onclick="logout()" title="Sair da conta">
-      ⏻ Sair
+      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+        <path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/>
+        <polyline points="16 17 21 12 16 7"/>
+        <line x1="21" y1="12" x2="9" y2="12"/>
+      </svg>
     </button>
   </div>
 
@@ -337,6 +349,10 @@
   <div id="userBar">
     <div class="vs-avatar" id="userAvatar">?</div>
     <div id="userName"><span id="userEmail">—</span></div>
+    <div class="lang-toggle">
+      <button type="button" class="lang-btn active" id="langPt" onclick="setLang('pt')">PT</button>
+      <button type="button" class="lang-btn" id="langEn" onclick="setLang('en')">EN</button>
+    </div>
   </div>
 
   <!-- Body -->
@@ -345,7 +361,7 @@
     <!-- Login -->
     <div id="loginSection">
       <p class="vs-login-msg">
-        Faça login com sua conta Microsoft para arquivar emails no SharePoint.
+        <span data-i18n="loginMsg">Faça login com sua conta Microsoft para arquivar emails no SharePoint.</span>
       </p>
       <button id="loginBtn" onclick="login()">
         <svg width="16" height="16" viewBox="0 0 23 23" xmlns="http://www.w3.org/2000/svg" style="flex-shrink:0;">
@@ -354,7 +370,7 @@
           <rect x="1"  y="12" width="10" height="10" fill="#00A4EF"/>
           <rect x="12" y="12" width="10" height="10" fill="#FFB900"/>
         </svg>
-        Entrar com Microsoft
+        <span data-i18n="loginBtn">Entrar com Microsoft</span>
       </button>
     </div>
 
@@ -369,19 +385,19 @@
             <line x1="11" y1="11" x2="14.5" y2="14.5"/>
           </svg>
         </span>
-        <input type="text" id="searchInput" placeholder="Buscar pasta..." oninput="onSearchInput(this.value)" autocomplete="off"/>
+        <input type="text" id="searchInput" placeholder="Buscar pasta..." data-i18n-ph="searchPh" oninput="onSearchInput(this.value)" autocomplete="off"/>
         <button id="searchClear" onclick="clearSearch()" title="Limpar busca">✕</button>
       </div>
       <div id="searchResults"></div>
 
       <div id="normalFolderUI">
       <div id="emailPreview">
-        <div class="preview-label">Email selecionado</div>
+        <div class="preview-label" data-i18n="emailSelected">Email selecionado</div>
         <div id="previewSubject">—</div>
         <div id="previewFrom">—</div>
       </div>
 
-      <label class="vs-label" for="rootFolder">Pasta principal</label>
+      <label class="vs-label" for="rootFolder" data-i18n="rootFolder">Pasta principal</label>
       <div class="vs-select-wrap">
         <select id="rootFolder" onchange="onRootFolderChange(this.value)">
           <option value="">Carregando...</option>
@@ -390,7 +406,7 @@
       </div>
 
       <div id="subfolderSection">
-        <label class="vs-label" for="subFolder">Subpasta</label>
+        <label class="vs-label" for="subFolder" data-i18n="subFolder">Subpasta</label>
         <div class="vs-select-wrap">
           <select id="subFolder" onchange="onSubFolderChange(this.value)">
             <option value="">— raiz da pasta acima —</option>
@@ -400,7 +416,7 @@
       </div>
 
       <div id="subSubfolderSection" style="display:none;">
-        <label class="vs-label" for="subSubFolder">Sub-subpasta</label>
+        <label class="vs-label" for="subSubFolder" data-i18n="subSubFolder">Sub-subpasta</label>
         <div class="vs-select-wrap">
           <select id="subSubFolder" onchange="updateFolderIndicator()">
             <option value="">— raiz da subpasta acima —</option>
@@ -411,16 +427,16 @@
 
       <div id="folderIndicator">
         <span class="fi-icon">📁</span>
-        <div id="folderPath">Destino: <span id="folderPathText">—</span></div>
+        <div id="folderPath"><span data-i18n="destination">Destino:</span> <span id="folderPathText">—</span></div>
       </div>
 
-      <label class="vs-label" style="margin-top:12px; display:block;">Renomear</label>
+      <label class="vs-label" style="margin-top:12px; display:block;" data-i18n="rename">Renomear</label>
       <div class="rename-block">
-        <input type="text" id="customName" placeholder="Renomear (opcional)" autocomplete="off"/>
+        <input type="text" id="customName" placeholder="Renomear (opcional)" data-i18n-ph="renamePh" autocomplete="off"/>
       </div>
 
       <button id="archiveBtn" onclick="archiveEmail()">
-        Arquivar
+        <span data-i18n="archiveBtn">Arquivar</span>
       </button>
 
     </div>
@@ -433,7 +449,7 @@
 
   <div style="text-align:center; padding:8px 12px; background:#fff;">
     <img src="logo-vtech.png?v=2.8" alt="VTECH IT" style="height:22px; vertical-align:middle;"/>
-    <span style="font-size:9px; color:#888; margin-left:8px; vertical-align:middle;">Vshare v4.4</span>
+    <span style="font-size:9px; color:#888; margin-left:8px; vertical-align:middle;">Vshare v4.6</span>
   </div>
 
 </body>

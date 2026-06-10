@@ -755,6 +755,64 @@ function selectSearchResult(index) {
   console.log("[Vshare] Pasta selecionada com sucesso. Botão arquivar visível.");
 }
 
+// ── Sistema de tradução (PT / EN) ───────────────────────────
+const I18N = {
+  pt: {
+    subtitle:      "Arquivar no SharePoint",
+    loginMsg:      "Faça login com sua conta Microsoft para arquivar emails no SharePoint.",
+    loginBtn:      "Entrar com Microsoft",
+    searchPh:      "Buscar pasta...",
+    emailSelected: "Email selecionado",
+    rootFolder:    "Pasta principal",
+    subFolder:     "Subpasta",
+    subSubFolder:  "Sub-subpasta",
+    rename:        "Renomear",
+    renamePh:      "Renomear (opcional)",
+    destination:   "Destino:",
+    archiveBtn:    "Arquivar"
+  },
+  en: {
+    subtitle:      "Archive to SharePoint",
+    loginMsg:      "Sign in with your Microsoft account to archive emails to SharePoint.",
+    loginBtn:      "Sign in with Microsoft",
+    searchPh:      "Search folder...",
+    emailSelected: "Selected email",
+    rootFolder:    "Main folder",
+    subFolder:     "Subfolder",
+    subSubFolder:  "Sub-subfolder",
+    rename:        "Rename",
+    renamePh:      "Rename (optional)",
+    destination:   "Destination:",
+    archiveBtn:    "Archive"
+  }
+};
+
+let currentLang = "pt";
+
+function setLang(lang) {
+  currentLang = lang;
+  const dict = I18N[lang];
+
+  // Traduz elementos com data-i18n (texto)
+  document.querySelectorAll("[data-i18n]").forEach(el => {
+    const key = el.getAttribute("data-i18n");
+    if (dict[key]) el.textContent = dict[key];
+  });
+
+  // Traduz placeholders com data-i18n-ph
+  document.querySelectorAll("[data-i18n-ph]").forEach(el => {
+    const key = el.getAttribute("data-i18n-ph");
+    if (dict[key]) el.placeholder = dict[key];
+  });
+
+  // Atualiza o estado visual dos botões
+  const ptBtn = document.getElementById("langPt");
+  const enBtn = document.getElementById("langEn");
+  if (ptBtn) ptBtn.classList.toggle("active", lang === "pt");
+  if (enBtn) enBtn.classList.toggle("active", lang === "en");
+}
+window.setLang = setLang;
+
 // ── Helpers de UI ────────────────────────────────────────────
 function showStatus(msg, type) {
   const el = document.getElementById("status");
