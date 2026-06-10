@@ -10,8 +10,8 @@
   <script src="https://cdn.jsdelivr.net/npm/cfb@1.2.2/dist/cfb.min.js"></script>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
 
-  <script src="config.js?v=4.0"></script>
-  <script src="taskpane.js?v=4.0" defer></script>
+  <script src="config.js?v=4.1"></script>
+  <script src="taskpane.js?v=4.1" defer></script>
 
   <style>
     *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
@@ -400,10 +400,11 @@
           </svg>
         </span>
         <input type="text" id="customName" placeholder="Renomear (opcional)" autocomplete="off"/>
-        <div class="format-toggle">
-          <button type="button" class="format-btn active" id="fmtEml" onclick="setFormat('eml')">.eml</button>
-          <button type="button" class="format-btn" id="fmtPdf" onclick="setFormat('pdf')">.pdf</button>
-        </div>
+      </div>
+      <div class="format-row">
+        <span class="format-label">Formato:</span>
+        <button type="button" class="format-btn active" id="fmtEml" onclick="setFormat('eml')">.eml</button>
+        <button type="button" class="format-btn" id="fmtPdf" onclick="setFormat('pdf')">.pdf</button>
       </div>
 
       <button id="archiveBtn" onclick="archiveEmail()">
@@ -420,7 +421,7 @@
 
   <div style="text-align:center; padding:8px 12px; background:#fff;">
     <img src="logo-vtech.png?v=2.8" alt="VTECH IT" style="height:22px; vertical-align:middle;"/>
-    <span style="font-size:9px; color:#888; margin-left:8px; vertical-align:middle;">Vshare v4.0</span>
+    <span style="font-size:9px; color:#888; margin-left:8px; vertical-align:middle;">Vshare v4.1</span>
   </div>
 
 </body>
