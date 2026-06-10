@@ -769,7 +769,17 @@ const I18N = {
     rename:        "Renomear",
     renamePh:      "Renomear (opcional)",
     destination:   "Destino:",
-    archiveBtn:    "Arquivar"
+    archiveBtn:    "Arquivar",
+    newCase:       "Criar cliente / caso",
+    createTitle:   "Criar estrutura",
+    newClient:     "Novo cliente",
+    newCaseTab:    "Novo caso",
+    clientNumber:  "Número do cliente",
+    clientName:    "Nome do cliente",
+    caseQty:       "Quantidade de casos",
+    selectClient:  "Cliente",
+    howManyCases:  "Quantos casos adicionar",
+    createBtn:     "Criar"
   },
   en: {
     subtitle:      "Archive to SharePoint",
@@ -783,7 +793,17 @@ const I18N = {
     rename:        "Rename",
     renamePh:      "Rename (optional)",
     destination:   "Destination:",
-    archiveBtn:    "Archive"
+    archiveBtn:    "Archive",
+    newCase:       "Create client / case",
+    createTitle:   "Create structure",
+    newClient:     "New client",
+    newCaseTab:    "New case",
+    clientNumber:  "Client number",
+    clientName:    "Client name",
+    caseQty:       "Number of cases",
+    selectClient:  "Client",
+    howManyCases:  "How many cases to add",
+    createBtn:     "Create"
   }
 };
 
@@ -812,6 +832,164 @@ function setLang(lang) {
   if (enBtn) enBtn.classList.toggle("active", lang === "en");
 }
 window.setLang = setLang;
+
+// ── Criação de cliente / caso ────────────────────────────────
+const SUBPASTAS_CASO = [
+  "Autos digitais",
+  "Contratos",
+  "E-mails",
+  "Outros Tipos",
+  "Processos e Procedimentos",
+  "Procuracoes e Documentos societarios",
+  "Relatorios"
+];
+
+let createMode = "client";  // "client" ou "case"
+
+function toggleCreatePanel() {
+  const panel = document.getElementById("createPanel");
+  const open = panel.style.display !== "block";
+  panel.style.display = open ? "block" : "none";
+  // Esconde a UI normal de pastas enquanto cria
+  document.getElementById("normalFolderUI").style.display = open ? "none" : "block";
+  if (open && createMode === "case") loadExistingClients();
+}
+window.toggleCreatePanel = toggleCreatePanel;
+
+function setCreateMode(mode) {
+  createMode = mode;
+  document.getElementById("tabNewClient").classList.toggle("active", mode === "client");
+  document.getElementById("tabNewCase").classList.toggle("active", mode === "case");
+  document.getElementById("modeClient").style.display = mode === "client" ? "block" : "none";
+  document.getElementById("modeCase").style.display   = mode === "case" ? "block" : "none";
+  if (mode === "case") loadExistingClients();
+}
+window.setCreateMode = setCreateMode;
+
+// Carrega os clientes existentes (pastas raiz) no select
+async function loadExistingClients() {
+  const sel = document.getElementById("existingClient");
+  sel.innerHTML = '<option value="">— selecione o cliente —</option>';
+  allFolders.forEach(f => {
+    const opt = document.createElement("option");
+    opt.value = f.name;  // usa o nome para montar o caminho
+    opt.textContent = f.name;
+    sel.appendChild(opt);
+  });
+}
+
+function showCreateStatus(msg, type) {
+  const el = document.getElementById("createStatus");
+  el.textContent = msg; el.className = type; el.style.display = "block";
+}
+
+// Cria uma pasta via Graph API (equivalente ao Add-PnPFolder)
+async function createFolder(parentPath, folderName) {
+  const token = await getValidToken();
+  // parentPath vazio = raiz do drive
+  const endpoint = parentPath
+    ? `/drives/${driveId}/root:/${encodeURIComponent(parentPath)}:/children`
+    : `/drives/${driveId}/root/children`;
+
+  const res = await fetch("https://graph.microsoft.com/v1.0" + endpoint, {
+    method: "POST",
+    headers: { Authorization: "Bearer " + token, "Content-Type": "application/json" },
+    body: JSON.stringify({
+      name: folderName,
+      folder: {},
+      "@microsoft.graph.conflictBehavior": "fail"  // não recria se já existe
+    })
+  });
+  // 409 = já existe (tudo bem, ignoramos como o SilentlyContinue do script)
+  if (!res.ok && res.status !== 409) {
+    throw new Error(`Erro ao criar "${folderName}": ${res.status}`);
+  }
+  return res.status;
+}
+
+// Cria a estrutura completa: cliente + casos + 7 subpastas cada
+async function confirmCreate() {
+  const btn = document.getElementById("createConfirmBtn");
+  btn.disabled = true;
+  const originalText = btn.textContent;
+  btn.textContent = "Criando...";
+
+  try {
+    if (createMode === "client") {
+      // ── Novo cliente ──
+      const num  = document.getElementById("clientNumber").value.trim();
+      const name = document.getElementById("clientName").value.trim();
+      const qty  = parseInt(document.getElementById("caseQty").value) || 1;
+
+      if (!num || !name) {
+        showCreateStatus("Preencha número e nome do cliente.", "error");
+        btn.disabled = false; btn.textContent = originalText; return;
+      }
+
+      const pastaCliente = `${num} - ${name}`;
+      showCreateStatus(`Criando cliente "${pastaCliente}"...`, "loading");
+      await createFolder("", pastaCliente);
+
+      // Cria os casos
+      for (let i = 1; i <= qty; i++) {
+        const numeroCaso = `${num}-${String(i).padStart(4, "0")}`;
+        showCreateStatus(`Criando caso ${i}/${qty}: ${numeroCaso}...`, "loading");
+        await createFolder(pastaCliente, numeroCaso);
+        // Cria as 7 subpastas
+        for (const sub of SUBPASTAS_CASO) {
+          await createFolder(`${pastaCliente}/${numeroCaso}`, sub);
+        }
+      }
+
+      showCreateStatus(`Cliente "${pastaCliente}" criado com ${qty} caso(s).`, "success");
+
+    } else {
+      // ── Novo caso em cliente existente ──
+      const cliente = document.getElementById("existingClient").value;
+      const qty     = parseInt(document.getElementById("addCaseQty").value) || 1;
+
+      if (!cliente) {
+        showCreateStatus("Selecione um cliente.", "error");
+        btn.disabled = false; btn.textContent = originalText; return;
+      }
+
+      // Descobre o número do cliente (primeira parte antes do " - ")
+      const num = cliente.split(" - ")[0].trim();
+
+      // Conta quantos casos já existem para continuar a numeração
+      const existing = await graphGetAll(
+        `/drives/${driveId}/root:/${encodeURIComponent(cliente)}:/children?$select=name,folder&$top=200`
+      );
+      const casos = existing.filter(isFolder).filter(f => /^\d+-\d{4}$/.test(f.name));
+      let maxNum = 0;
+      casos.forEach(c => {
+        const n = parseInt(c.name.split("-")[1]);
+        if (n > maxNum) maxNum = n;
+      });
+
+      for (let i = 1; i <= qty; i++) {
+        const numeroCaso = `${num}-${String(maxNum + i).padStart(4, "0")}`;
+        showCreateStatus(`Criando caso ${i}/${qty}: ${numeroCaso}...`, "loading");
+        await createFolder(cliente, numeroCaso);
+        for (const sub of SUBPASTAS_CASO) {
+          await createFolder(`${cliente}/${numeroCaso}`, sub);
+        }
+      }
+
+      showCreateStatus(`${qty} caso(s) adicionado(s) ao cliente "${cliente}".`, "success");
+    }
+
+    // Recarrega a lista de pastas raiz para refletir o novo cliente
+    await loadRootFolders();
+
+  } catch (e) {
+    showCreateStatus("Erro: " + e.message, "error");
+  } finally {
+    btn.disabled = false;
+    btn.textContent = originalText;
+  }
+}
+window.confirmCreate = confirmCreate;
 
 // ── Helpers de UI ────────────────────────────────────────────
 function showStatus(msg, type) {
