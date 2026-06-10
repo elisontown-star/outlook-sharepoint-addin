@@ -8,9 +8,10 @@
   <script src="https://appsforoffice.microsoft.com/lib/1/hosted/office.js"></script>
   <script src="https://alcdn.msauth.net/browser/2.38.0/js/msal-browser.min.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/cfb@1.2.2/dist/cfb.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
 
   <script src="config.js?v=2.8"></script>
-  <script src="taskpane.js?v=4.4" defer></script>
+  <script src="taskpane.js?v=4.5" defer></script>
 
   <style>
     *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
@@ -302,27 +303,6 @@
       text-align: center;
       display: flex; align-items: center; justify-content: center; gap: 6px;
     }
-  
-    /* ── Renomear + Formato ── */
-    .rename-block { margin-bottom: 14px; }
-    .rename-block input[type="text"] {
-      display: block; width: 100%;
-      padding: 8px 10px; background: #fff;
-      border: 1px solid #0a2472; border-radius: 2px;
-      color: #333; font-size: 13px;
-      font-family: "Segoe UI", sans-serif;
-      box-sizing: border-box; margin-bottom: 8px;
-    }
-    .rename-block input[type="text"]:focus { outline: none; border-color: #0078d4; }
-    .rename-block input[type="text"]::placeholder { color: #999; font-size: 12px; }
-    .format-row { display: flex; align-items: center; gap: 8px; margin-bottom: 14px; }
-    .format-label { font-size: 12px; color: #8892a4; }
-    .format-btn {
-      padding: 5px 16px; font-size: 12px; font-weight: 600;
-      border: 1px solid #2a3a5c; border-radius: 6px;
-      background: #16213e; color: #8892a4; cursor: pointer;
-    }
-    .format-btn.active { background: #0078d4; color: #fff; border-color: #0078d4; }
   </style>
 </head>
 <body>
@@ -400,18 +380,8 @@
       <div id="subfolderSection">
         <label class="vs-label" for="subFolder">Subpasta</label>
         <div class="vs-select-wrap">
-          <select id="subFolder" onchange="onSubFolderChange(this.value)">
+          <select id="subFolder" onchange="updateFolderIndicator()">
             <option value="">— raiz da pasta acima —</option>
-          </select>
-          <span class="vs-chevron">▾</span>
-        </div>
-      </div>
-
-      <div id="subSubfolderSection" style="display:none;">
-        <label class="vs-label" for="subSubFolder">Sub-subpasta</label>
-        <div class="vs-select-wrap">
-          <select id="subSubFolder" onchange="updateFolderIndicator()">
-            <option value="">— raiz da subpasta acima —</option>
           </select>
           <span class="vs-chevron">▾</span>
         </div>
@@ -420,16 +390,6 @@
       <div id="folderIndicator">
         <span class="fi-icon">📁</span>
         <div id="folderPath">Destino: <span id="folderPathText">—</span></div>
-      </div>
-
-      <label class="vs-label" style="margin-top:12px; display:block;">Renomear</label>
-      <div class="rename-block">
-        <input type="text" id="customName" placeholder="Renomear (opcional)" autocomplete="off"/>
-        <div class="format-row">
-          <span class="format-label">Formato:</span>
-          <button type="button" class="format-btn active" id="fmtEml" onclick="setFormat('eml')">.eml</button>
-          <button type="button" class="format-btn" id="fmtPdf" onclick="setFormat('pdf')">.pdf</button>
-        </div>
       </div>
 
       <button id="archiveBtn" onclick="archiveEmail()">
@@ -446,7 +406,7 @@
 
   <div style="text-align:center; padding:8px 12px; background:#fff;">
     <img src="logo-vtech.png?v=2.8" alt="VTECH IT" style="height:22px; vertical-align:middle;"/>
-    <span style="font-size:9px; color:#888; margin-left:8px; vertical-align:middle;">Vshare v4.4</span>
+    <span style="font-size:9px; color:#888; margin-left:8px; vertical-align:middle;">Vshare v4.5</span>
   </div>
 
 </body>
