@@ -10,7 +10,6 @@ let currentItem   = null;
 let siteId        = null;
 let driveId       = null;
 let loggedAccount = null;
-let selectedFormat = "eml";  // formato escolhido: eml ou pdf
 
 // ── Inicialização ────────────────────────────────────────────
 Office.onReady(async () => {
@@ -343,6 +342,10 @@ function updateFolderIndicator() {
 }
 
 async function onRootFolderChange(folderId) {
+  const s3 = document.getElementById("subSubfolderSection");
+  const sel3 = document.getElementById("subSubFolder");
+  if (s3) s3.style.display = "none";
+  if (sel3) sel3.innerHTML = '<option value="">— raiz da subpasta acima —</option>';
   updateFolderIndicator();
   await loadSubfolders(folderId);
 }
@@ -364,6 +367,10 @@ async function loadSubfolders(folderId) {
     console.log(`[Vshare] Subpastas encontradas: ${subFolders.length} de ${allItems.length} itens`);
 
     subSelect.innerHTML = '<option value="">— raiz da pasta acima —</option>';
+    const _s3 = document.getElementById("subSubfolderSection");
+    const _sel3 = document.getElementById("subSubFolder");
+    if (_s3) _s3.style.display = "none";
+    if (_sel3) _sel3.innerHTML = '<option value="">— raiz da subpasta acima —</option>';
 
     if (subFolders.length > 0) {
       subFolders.forEach(f => {
@@ -382,6 +389,40 @@ async function loadSubfolders(folderId) {
   }
 }
 
+// ── 3º nível: sub-subpastas ──────────────────────────────────
+async function onSubFolderChange(folderId) {
+  const section = document.getElementById("subSubfolderSection");
+  const sel     = document.getElementById("subSubFolder");
+
+  // Reseta o 3º nível
+  sel.innerHTML = '<option value="">— raiz da subpasta acima —</option>';
+  section.style.display = "none";
+
+  if (folderId) {
+    try {
+      const items = await graphGetAll(
+        `/drives/${driveId}/items/${folderId}/children?$select=id,name,folder&$top=200`
+      );
+      const subs = items.filter(isFolder)
+        .sort((a, b) => a.name.localeCompare(b.name, "pt-BR"));
+
+      if (subs.length > 0) {
+        subs.forEach(f => {
+          const opt = document.createElement("option");
+          opt.value = f.id;
+          opt.textContent = f.name;
+          sel.appendChild(opt);
+        });
+        section.style.display = "block";
+      }
+    } catch (e) {
+      console.warn("[Vshare] Erro ao carregar sub-subpastas:", e.message);
+    }
+  }
+  updateFolderIndicator();
+}
+window.onSubFolderChange = onSubFolderChange;
+
 // ── Arquivamento ─────────────────────────────────────────────
 async function archiveEmail() {
   // Prioriza pasta selecionada via busca; senão usa os selects normais
@@ -390,13 +431,15 @@ async function archiveEmail() {
   if (selectedResult) {
     targetFolderId = selectedResult.id;
   } else {
-    const rootId = document.getElementById("rootFolder").value;
-    const subId  = document.getElementById("subFolder").value;
+    const rootId   = document.getElementById("rootFolder").value;
+    const subId    = document.getElementById("subFolder").value;
+    const subSubEl = document.getElementById("subSubFolder");
+    const subSubId = subSubEl ? subSubEl.value : "";
     if (!rootId) {
       showStatus("Selecione uma pasta antes de arquivar.", "error");
       return;
     }
-    targetFolderId = subId || rootId;
+    targetFolderId = subSubId || subId || rootId;
   }
   const btn = document.getElementById("archiveBtn");
   btn.innerHTML = '<span class="loader"></span>Arquivando...';
@@ -404,29 +447,12 @@ async function archiveEmail() {
   showStatus("Obtendo conteúdo do email...", "loading");
 
   try {
-    let blob, extension;
+    const { blob, extension } = await fetchEmailBlob();
 
-    if (selectedFormat === "pdf") {
-      blob      = await buildEmailPdf();
-      extension = "pdf";
-    } else {
-      const result = await fetchEmailBlob();
-      blob      = result.blob;
-      extension = result.extension;
-    }
-
-    // Nome customizado ou automático
-    const customName = document.getElementById("customName")?.value.trim() || "";
-    let fileName;
-    if (customName) {
-      const clean = customName.replace(/[\/:*?"<>|]/g, "_").substring(0, 100);
-      fileName = clean.toLowerCase().endsWith(`.${extension}`) ? clean : `${clean}.${extension}`;
-    } else {
-      const date    = getLocalDateString();
-      const subject = (currentItem.subject || "sem-assunto")
-        .replace(/[\/:*?"<>|]/g, "_").substring(0, 80);
-      fileName = `${date}_${subject}.${extension}`;
-    }
+    const date     = getLocalDateString();
+    const subject  = (currentItem.subject || "sem-assunto")
+      .replace(/[\\/:*?"<>|]/g, "_").substring(0, 80);
+    const fileName = `${date}_${subject}.${extension}`;
 
     showStatus("Enviando para o SharePoint...", "loading");
     await graphPut(
@@ -435,9 +461,6 @@ async function archiveEmail() {
     );
 
     showStatus(`Email arquivado com sucesso em "${fileName}"`, "success");
-    const nameEl = document.getElementById("customName");
-    if (nameEl) nameEl.value = "";
-    setFormat("eml");
     selectedResult = null;
   } catch (e) {
     showStatus("Erro ao arquivar: " + e.message, "error");
@@ -448,77 +471,6 @@ async function archiveEmail() {
 }
 
 // ── Data local (fuso Brasil) ─────────────────────────────────
-// ── Seletor de formato (.eml / .pdf) ─────────────────────────
-function setFormat(fmt) {
-  selectedFormat = fmt;
-  const emlBtn = document.getElementById("fmtEml");
-  const pdfBtn = document.getElementById("fmtPdf");
-  if (emlBtn) emlBtn.classList.toggle("active", fmt === "eml");
-  if (pdfBtn) pdfBtn.classList.toggle("active", fmt === "pdf");
-}
-window.setFormat = setFormat;
-
-// ── Gera PDF a partir do email ────────────────────────────────
-async function buildEmailPdf() {
-  const item    = Office.context.mailbox.item;
-  const subject = item.subject || "(sem assunto)";
-  const from    = item.from ? `${item.from.displayName} <${item.from.emailAddress}>` : "—";
-  const toList  = (item.to || []).map(r => `${r.displayName} <${r.emailAddress}>`).join(", ") || "—";
-  const dateStr = new Date().toLocaleString("pt-BR");
-
-  const bodyText = await new Promise(resolve => {
-    item.body.getAsync(Office.CoercionType.Text, r =>
-      resolve(r.status === Office.AsyncResultStatus.Succeeded ? r.value : "(corpo não disponível)")
-    );
-  });
-
-  const { jsPDF } = window.jspdf;
-  const doc    = new jsPDF({ unit: "pt", format: "a4" });
-  const margin = 40;
-  const pageW  = doc.internal.pageSize.getWidth();
-  const maxW   = pageW - margin * 2;
-  let y = margin;
-
-  // Cabeçalho
-  doc.setFont("helvetica", "bold");
-  doc.setFontSize(14);
-  doc.setTextColor(10, 36, 114);
-  doc.text("Email Arquivado - Vshare", margin, y);
-  y += 24;
-
-  // Metadados
-  doc.setFontSize(10);
-  doc.setTextColor(60, 60, 60);
-  [["Assunto:", subject], ["De:", from], ["Para:", toList], ["Arquivado em:", dateStr]].forEach(([label, val]) => {
-    doc.setFont("helvetica", "bold");
-    doc.text(label, margin, y);
-    doc.setFont("helvetica", "normal");
-    const lines = doc.splitTextToSize(val, maxW - 80);
-    doc.text(lines, margin + 75, y);
-    y += lines.length * 14 + 4;
-  });
-
-  // Linha separadora
-  y += 6;
-  doc.setDrawColor(0, 120, 212);
-  doc.line(margin, y, pageW - margin, y);
-  y += 18;
-
-  // Corpo
-  doc.setFont("helvetica", "normal");
-  doc.setFontSize(10);
-  doc.setTextColor(20, 20, 20);
-  const bodyLines = doc.splitTextToSize(bodyText, maxW);
-  const pageH = doc.internal.pageSize.getHeight();
-  bodyLines.forEach(line => {
-    if (y > pageH - margin) { doc.addPage(); y = margin; }
-    doc.text(line, margin, y);
-    y += 13;
-  });
-
-  return doc.output("blob");
-}
-
 function getLocalDateString() {
   const now  = new Date();
   const yyyy = now.getFullYear();
