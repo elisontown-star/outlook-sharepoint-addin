@@ -325,18 +325,23 @@ async function loadRootFolders() {
 
 // ── Subpastas + indicador de pasta ──────────────────────────
 function updateFolderIndicator() {
-  const rootSel = document.getElementById("rootFolder");
-  const subSel  = document.getElementById("subFolder");
-  const rootName = rootSel.options[rootSel.selectedIndex]?.text || "";
-  const subName  = subSel.options[subSel.selectedIndex]?.text || "";
-  const indicator = document.getElementById("folderIndicator");
+  const rootSel   = document.getElementById("rootFolder");
+  const subSel    = document.getElementById("subFolder");
+  const subSubSel = document.getElementById("subSubFolder");
+  const rootName   = rootSel.options[rootSel.selectedIndex]?.text || "";
+  const subName    = subSel.options[subSel.selectedIndex]?.text || "";
+  const subSubName = subSubSel ? subSubSel.options[subSubSel.selectedIndex]?.text || "" : "";
+  const indicator  = document.getElementById("folderIndicator");
 
   if (!rootSel.value) {
     indicator.style.display = "none";
     return;
   }
 
-  const path = subSel.value ? `${rootName} / ${subName}` : rootName;
+  let path = rootName;
+  if (subSel.value)     path += ` / ${subName}`;
+  if (subSubSel?.value) path += ` / ${subSubName}`;
+
   document.getElementById("folderPathText").textContent = path;
   indicator.style.display = "flex";
 }
@@ -393,8 +398,6 @@ async function loadSubfolders(folderId) {
 async function onSubFolderChange(folderId) {
   const section = document.getElementById("subSubfolderSection");
   const sel     = document.getElementById("subSubFolder");
-
-  // Reseta o 3º nível
   sel.innerHTML = '<option value="">— raiz da subpasta acima —</option>';
   section.style.display = "none";
 
@@ -403,14 +406,11 @@ async function onSubFolderChange(folderId) {
       const items = await graphGetAll(
         `/drives/${driveId}/items/${folderId}/children?$select=id,name,folder&$top=200`
       );
-      const subs = items.filter(isFolder)
-        .sort((a, b) => a.name.localeCompare(b.name, "pt-BR"));
-
+      const subs = items.filter(isFolder).sort((a, b) => a.name.localeCompare(b.name, "pt-BR"));
       if (subs.length > 0) {
         subs.forEach(f => {
           const opt = document.createElement("option");
-          opt.value = f.id;
-          opt.textContent = f.name;
+          opt.value = f.id; opt.textContent = f.name;
           sel.appendChild(opt);
         });
         section.style.display = "block";
@@ -449,10 +449,18 @@ async function archiveEmail() {
   try {
     const { blob, extension } = await fetchEmailBlob();
 
-    const date     = getLocalDateString();
-    const subject  = (currentItem.subject || "sem-assunto")
-      .replace(/[\\/:*?"<>|]/g, "_").substring(0, 80);
-    const fileName = `${date}_${subject}.${extension}`;
+    // Nome customizado (opcional) ou automático
+    const customName = document.getElementById("customName")?.value.trim() || "";
+    let fileName;
+    if (customName) {
+      const clean = customName.replace(/[\/:*?"<>|]/g, "_").substring(0, 100);
+      fileName = clean.toLowerCase().endsWith(`.${extension}`) ? clean : `${clean}.${extension}`;
+    } else {
+      const date    = getLocalDateString();
+      const subject = (currentItem.subject || "sem-assunto")
+        .replace(/[\/:*?"<>|]/g, "_").substring(0, 80);
+      fileName = `${date}_${subject}.${extension}`;
+    }
 
     showStatus("Enviando para o SharePoint...", "loading");
     await graphPut(
@@ -461,6 +469,8 @@ async function archiveEmail() {
     );
 
     showStatus(`Email arquivado com sucesso em "${fileName}"`, "success");
+    const nameEl = document.getElementById("customName");
+    if (nameEl) nameEl.value = "";
     selectedResult = null;
   } catch (e) {
     showStatus("Erro ao arquivar: " + e.message, "error");
