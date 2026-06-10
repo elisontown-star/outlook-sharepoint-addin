@@ -9,6 +9,7 @@ let accessToken   = null;
 let currentItem   = null;
 let siteId        = null;
 let driveId       = null;
+let selectedFormat = "eml";  // formato: eml ou pdf
 let loggedAccount = null;
 
 // ── Inicialização ────────────────────────────────────────────
@@ -403,13 +404,22 @@ async function archiveEmail() {
   showStatus("Obtendo conteúdo do email...", "loading");
 
   try {
-    const { blob, extension } = await fetchEmailBlob();
+    let blob, extension;
+
+    if (selectedFormat === "pdf") {
+      // Gera PDF a partir do conteúdo do email
+      blob = await buildEmailPdf();
+      extension = "pdf";
+    } else {
+      const result = await fetchEmailBlob();
+      blob = result.blob;
+      extension = result.extension;
+    }
 
     // Nome customizado (opcional) ou nome automático (data + assunto)
     const customName = document.getElementById("customName").value.trim();
     let fileName;
     if (customName) {
-      // Sanitiza o nome digitado e garante a extensão correta
       const clean = customName.replace(/[\\/:*?"<>|]/g, "_").substring(0, 100);
       fileName = clean.toLowerCase().endsWith(`.${extension}`) ? clean : `${clean}.${extension}`;
     } else {
@@ -427,6 +437,7 @@ async function archiveEmail() {
 
     showStatus(`Email arquivado com sucesso em "${fileName}"`, "success");
     document.getElementById("customName").value = "";
+    setFormat("eml");
     selectedResult = null;
   } catch (e) {
     showStatus("Erro ao arquivar: " + e.message, "error");
@@ -437,6 +448,82 @@ async function archiveEmail() {
 }
 
 // ── Data local (fuso Brasil) ─────────────────────────────────
+// ── Gera PDF a partir do conteúdo do email ───────────────────
+async function buildEmailPdf() {
+  const item = Office.context.mailbox.item;
+
+  // Coleta os dados do email
+  const subject = item.subject || "(sem assunto)";
+  const from    = item.from ? `${item.from.displayName} <${item.from.emailAddress}>` : "—";
+  const toList  = (item.to || []).map(r => `${r.displayName} <${r.emailAddress}>`).join(", ") || "—";
+  const dateStr = new Date().toLocaleString("pt-BR");
+
+  // Obtém o corpo em texto puro (mais limpo para PDF)
+  const bodyText = await new Promise(resolve => {
+    item.body.getAsync(Office.CoercionType.Text, r =>
+      resolve(r.status === Office.AsyncResultStatus.Succeeded ? r.value : "(corpo não disponível)")
+    );
+  });
+
+  // Cria o PDF com jsPDF
+  const { jsPDF } = window.jspdf;
+  const doc = new jsPDF({ unit: "pt", format: "a4" });
+  const margin = 40;
+  const pageW = doc.internal.pageSize.getWidth();
+  const maxW = pageW - margin * 2;
+  let y = margin;
+
+  // Cabeçalho
+  doc.setFont("helvetica", "bold");
+  doc.setFontSize(14);
+  doc.setTextColor(10, 36, 114);
+  doc.text("Email Arquivado - Vshare", margin, y);
+  y += 24;
+
+  // Metadados
+  doc.setFontSize(10);
+  doc.setTextColor(60, 60, 60);
+  const meta = [
+    ["Assunto:", subject],
+    ["De:", from],
+    ["Para:", toList],
+    ["Arquivado em:", dateStr],
+  ];
+  meta.forEach(([label, val]) => {
+    doc.setFont("helvetica", "bold");
+    doc.text(label, margin, y);
+    doc.setFont("helvetica", "normal");
+    const lines = doc.splitTextToSize(val, maxW - 80);
+    doc.text(lines, margin + 75, y);
+    y += lines.length * 14 + 4;
+  });
+
+  // Linha separadora
+  y += 6;
+  doc.setDrawColor(0, 120, 212);
+  doc.line(margin, y, pageW - margin, y);
+  y += 18;
+
+  // Corpo
+  doc.setFont("helvetica", "normal");
+  doc.setFontSize(10);
+  doc.setTextColor(20, 20, 20);
+  const bodyLines = doc.splitTextToSize(bodyText, maxW);
+  const lineH = 13;
+  const pageH = doc.internal.pageSize.getHeight();
+
+  bodyLines.forEach(line => {
+    if (y > pageH - margin) {
+      doc.addPage();
+      y = margin;
+    }
+    doc.text(line, margin, y);
+    y += lineH;
+  });
+
+  return doc.output("blob");
+}
+
 function getLocalDateString() {
   const now  = new Date();
   const yyyy = now.getFullYear();
@@ -710,6 +797,15 @@ function selectSearchResult(index) {
 
   console.log("[Vshare] Pasta selecionada com sucesso. Botão arquivar visível.");
 }
+
+
+// ── Seletor de formato (.eml / .pdf) ─────────────────────────
+function setFormat(fmt) {
+  selectedFormat = fmt;
+  document.getElementById("fmtEml").classList.toggle("active", fmt === "eml");
+  document.getElementById("fmtPdf").classList.toggle("active", fmt === "pdf");
+}
+window.setFormat = setFormat;
 
 // ── Helpers de UI ────────────────────────────────────────────
 function showStatus(msg, type) {

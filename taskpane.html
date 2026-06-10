@@ -8,9 +8,10 @@
   <script src="https://appsforoffice.microsoft.com/lib/1/hosted/office.js"></script>
   <script src="https://alcdn.msauth.net/browser/2.38.0/js/msal-browser.min.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/cfb@1.2.2/dist/cfb.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
 
-  <script src="config.js?v=3.9"></script>
-  <script src="taskpane.js?v=3.9" defer></script>
+  <script src="config.js?v=4.0"></script>
+  <script src="taskpane.js?v=4.0" defer></script>
 
   <style>
     *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
@@ -393,8 +394,16 @@
 
       <label class="vs-label" for="customName" style="margin-top:12px;">Renomear</label>
       <div class="vs-rename-wrap">
-        <input type="text" id="customName" placeholder="Deixe em branco para nome automático" autocomplete="off"/>
-        <span class="rename-ext" id="renameExt">.eml</span>
+        <span class="rename-icon">
+          <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="#605e5c" stroke-width="1.5">
+            <path d="M11 1.5l3.5 3.5L5 14.5 1.5 14.5 1.5 11z"/>
+          </svg>
+        </span>
+        <input type="text" id="customName" placeholder="Renomear (opcional)" autocomplete="off"/>
+        <div class="format-toggle">
+          <button type="button" class="format-btn active" id="fmtEml" onclick="setFormat('eml')">.eml</button>
+          <button type="button" class="format-btn" id="fmtPdf" onclick="setFormat('pdf')">.pdf</button>
+        </div>
       </div>
 
       <button id="archiveBtn" onclick="archiveEmail()">
@@ -411,7 +420,7 @@
 
   <div style="text-align:center; padding:8px 12px; background:#fff;">
     <img src="logo-vtech.png?v=2.8" alt="VTECH IT" style="height:22px; vertical-align:middle;"/>
-    <span style="font-size:9px; color:#888; margin-left:8px; vertical-align:middle;">Vshare v3.9</span>
+    <span style="font-size:9px; color:#888; margin-left:8px; vertical-align:middle;">Vshare v4.0</span>
   </div>
 
 </body>
