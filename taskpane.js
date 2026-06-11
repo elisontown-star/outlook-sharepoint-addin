@@ -1,7 +1,7 @@
 // ============================================================
 //  Outlook Add-in — Vshare
-//  Autor: VtechIT  |  Versão: 1.2
-//  Fix: SSO nativo do Office + localStorage para sessão persistente
+//  Autor: VtechIT  |  Versão: 4.9
+//  v4.9: seletor de múltiplas bibliotecas SharePoint
 // ============================================================
 
 let msalInstance  = null;
@@ -10,6 +10,7 @@ let currentItem   = null;
 let siteId        = null;
 let driveId       = null;
 let loggedAccount = null;
+let currentSiteIndex = 0;  // índice do site ativo em CONFIG.SITES
 
 // ── Inicialização ────────────────────────────────────────────
 Office.onReady(async () => {
@@ -175,6 +176,24 @@ async function onLoggedIn() {
   document.getElementById("previewFrom").textContent =
     "De: " + (currentItem.from?.emailAddress || "—");
 
+  // Preenche e exibe o seletor de site (só se houver mais de 1)
+  const sites = CONFIG.SITES || [];
+  const siteSection = document.getElementById("siteSection");
+  const siteSelect  = document.getElementById("siteSelect");
+  if (sites.length > 1) {
+    siteSelect.innerHTML = "";
+    sites.forEach((s, i) => {
+      const opt = document.createElement("option");
+      opt.value = i;
+      opt.textContent = s.label;
+      siteSelect.appendChild(opt);
+    });
+    siteSelect.value = currentSiteIndex;
+    siteSection.style.display = "block";
+  } else {
+    siteSection.style.display = "none";
+  }
+
   await loadSiteAndDrive();
   await loadRootFolders();
 }
@@ -267,14 +286,19 @@ async function graphPut(endpoint, body, contentType = "application/octet-stream"
 async function loadSiteAndDrive() {
   showStatus("Conectando ao SharePoint...", "loading");
   try {
-    const siteHost = new URL(CONFIG.SITE_URL).hostname;
-    const sitePath = new URL(CONFIG.SITE_URL).pathname;
+    // Usa CONFIG.SITES se disponível; cai em CONFIG.SITE_URL como fallback
+    const activeSite = (CONFIG.SITES && CONFIG.SITES[currentSiteIndex])
+      ? CONFIG.SITES[currentSiteIndex]
+      : { siteUrl: CONFIG.SITE_URL, libraryName: CONFIG.LIBRARY_NAME };
+
+    const siteHost = new URL(activeSite.siteUrl).hostname;
+    const sitePath = new URL(activeSite.siteUrl).pathname;
     const siteData = await graphGet(`/sites/${siteHost}:${sitePath}`);
     siteId = siteData.id;
 
     const drives = await graphGet(`/sites/${siteId}/drives`);
     const drive  = drives.value.find(
-      d => d.name.toLowerCase() === CONFIG.LIBRARY_NAME.toLowerCase()
+      d => d.name.toLowerCase() === activeSite.libraryName.toLowerCase()
     ) || drives.value[0];
     driveId = drive.id;
     hideStatus();
@@ -761,6 +785,7 @@ const I18N = {
     subtitle:      "Arquivar no SharePoint",
     loginMsg:      "Faça login com sua conta Microsoft para arquivar emails no SharePoint.",
     loginBtn:      "Entrar com Microsoft",
+    siteLabel:     "Biblioteca",
     searchPh:      "Buscar pasta...",
     emailSelected: "Email selecionado",
     rootFolder:    "Pasta principal",
@@ -785,6 +810,7 @@ const I18N = {
     subtitle:      "Archive to SharePoint",
     loginMsg:      "Sign in with your Microsoft account to archive emails to SharePoint.",
     loginBtn:      "Sign in with Microsoft",
+    siteLabel:     "Library",
     searchPh:      "Search folder...",
     emailSelected: "Selected email",
     rootFolder:    "Main folder",
@@ -1002,6 +1028,27 @@ function showStatus(msg, type) {
 function hideStatus() {
   document.getElementById("status").style.display = "none";
 }
+
+// ── Troca de site/biblioteca ─────────────────────────────────
+async function onSiteChange(index) {
+  currentSiteIndex = parseInt(index);
+
+  // Limpa seleções anteriores
+  allFolders = [];
+  selectedResult = null;
+  searchResultsCache = [];
+  document.getElementById("rootFolder").innerHTML = '<option value="">Carregando...</option>';
+  document.getElementById("subfolderSection").style.display = "none";
+  const s3 = document.getElementById("subSubfolderSection");
+  if (s3) s3.style.display = "none";
+  document.getElementById("folderIndicator").style.display = "none";
+  document.getElementById("archiveBtn").style.display = "none";
+  clearSearch();
+
+  await loadSiteAndDrive();
+  await loadRootFolders();
+}
+window.onSiteChange = onSiteChange;
 
 // ── Exposição global para handlers onclick/oninput inline ────
 window.login = login;
