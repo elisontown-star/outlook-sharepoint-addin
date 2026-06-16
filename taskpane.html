@@ -9,8 +9,8 @@
   <script src="https://alcdn.msauth.net/browser/2.38.0/js/msal-browser.min.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/cfb@1.2.2/dist/cfb.min.js"></script>
 
-  <script src="config.js?v=5.0.1"></script>
-  <script src="taskpane.js?v=5.0.1" defer></script>
+  <script src="config.js?v=5.1.0"></script>
+  <script src="taskpane.js?v=5.1.0" defer></script>
 
   <style>
     *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
@@ -106,6 +106,15 @@
       border-radius: 8px;
       padding: 10px 12px;
       margin-bottom: 14px;
+      transition: background 0.15s, border-color 0.15s;
+    }
+    #emailPreview.dropzone-active {
+      background: #1b2a52;
+      border: 1px dashed #2196f3;
+      border-left: 3px solid #2196f3;
+    }
+    #emailPreview.dropzone-filled {
+      border-left: 3px solid #1d9e75;
     }
     .preview-label {
       font-size: 10px; font-weight: 600;
@@ -120,6 +129,12 @@
       margin-bottom: 2px;
     }
     #previewFrom { font-size: 11px; color: #8892a4; }
+    #dropHint {
+      font-size: 10px; color: #5f7099;
+      margin-top: 6px;
+      display: block;
+    }
+    #dropHint.hidden { display: none; }
 
     /* ── Labels e selects ── */
     .vs-label {
@@ -502,10 +517,11 @@
         <span>📨</span>
         <span><span id="multiSelectCount">0</span> e-mails selecionados — serão arquivados em lote na pasta escolhida.</span>
       </div>
-      <div id="emailPreview">
+      <div id="emailPreview" ondragover="onDropZoneDragOver(event)" ondragleave="onDropZoneDragLeave(event)" ondrop="onDropZoneDrop(event)">
         <div class="preview-label" data-i18n="emailSelected">Email selecionado</div>
         <div id="previewSubject">—</div>
         <div id="previewFrom">—</div>
+        <div id="dropHint" data-i18n="dropHint">ou arraste um e-mail aqui para anexar</div>
       </div>
 
       <label class="vs-label" for="rootFolder" data-i18n="rootFolder">Pasta principal</label>
@@ -562,7 +578,7 @@
 
   <div style="text-align:center; padding:8px 12px; background:#fff;">
     <img src="logo-vtech.png?v=2.9" alt="VTECH IT" style="height:22px; vertical-align:middle;"/>
-    <span style="font-size:9px; color:#888; margin-left:8px; vertical-align:middle;">Vshare v5.0.1</span>
+    <span style="font-size:9px; color:#888; margin-left:8px; vertical-align:middle;">Vshare v5.1.0</span>
   </div>
 
 </body>

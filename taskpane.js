@@ -1,9 +1,8 @@
 // ============================================================
 //  Outlook Add-in — Vshare
-//  Autor: VtechIT  |  Versão: 5.0.1
-//  v5.0.1: corrige timing do handler de multi-seleção (registrava após
-//  o login, perdendo o evento inicial) e onLoggedIn sobrescrevendo o
-//  preview de multi-seleção com dados do item único
+//  Autor: VtechIT  |  Versão: 5.1.0
+//  v5.1.0: arrastar e soltar e-mail (.eml/.msg) direto no painel para
+//  anexar como fonte do arquivamento, sem precisar selecionar no Outlook
 //  v5.0: arquivamento em lote (seleção múltipla de e-mails)
 // ============================================================
 
@@ -16,6 +15,7 @@ let loggedAccount = null;
 let currentSiteIndex = 0;  // índice do site ativo em CONFIG.SITES
 let isMultiSelectMode = false;
 let selectedMailItems  = []; // itens retornados por getSelectedItemsAsync (modo multi)
+let droppedItem = null; // { blob, extension, subject } — e-mail arrastado para a zona de drop
 
 // ── Inicialização ────────────────────────────────────────────
 Office.onReady(async () => {
@@ -25,6 +25,11 @@ Office.onReady(async () => {
   // disparado já na abertura do painel quando há vários itens
   // selecionados — pode passar batido e a UI nunca reflete o modo lote.
   registerMultiSelectHandler();
+
+  // Drag-and-drop via Office.js (Outlook na Web e New Outlook no Windows).
+  // No Desktop clássico e no Mac, o drop é tratado pelos handlers nativos
+  // HTML5 (ondragover/ondrop) já presentes no taskpane.html.
+  registerOfficeDragAndDrop();
 
   msalInstance = new msal.PublicClientApplication({
     auth: {
@@ -92,6 +97,13 @@ function updateMultiSelectUI() {
   const banner = document.getElementById("multiSelectBanner");
   if (!banner) return;
 
+  // Um e-mail anexado por arrastar-e-soltar tem prioridade visual sobre
+  // o item/seleção atual do Outlook — não sobrescreve o preview dele.
+  if (droppedItem) {
+    banner.style.display = "none";
+    return;
+  }
+
   if (isMultiSelectMode) {
     banner.style.display = "flex";
     document.getElementById("multiSelectCount").textContent = selectedMailItems.length;
@@ -112,6 +124,114 @@ function updateMultiSelectUI() {
         "De: " + (currentItem.from?.emailAddress || "—");
     }
   }
+}
+
+// ── Drag-and-drop: Office.js (Outlook na Web / New Outlook) ──────────
+// No Desktop clássico e no Mac, esse evento não dispara; o drop é
+// tratado pelos handlers HTML5 nativos (ver onDropZoneDrop abaixo).
+function registerOfficeDragAndDrop() {
+  if (!Office.context.mailbox.addHandlerAsync) return;
+  Office.context.mailbox.addHandlerAsync(
+    Office.EventType.DragAndDropEvent,
+    (event) => {
+      const data = event.dragAndDropEventData;
+      if (data.type === "dragover") {
+        setDropZoneActive(true);
+        return;
+      }
+      if (data.type === "drop") {
+        setDropZoneActive(false);
+        const files = data.dataTransfer.files || [];
+        if (files.length === 0) return;
+        // Pega o primeiro item solto (mensagem .eml/.msg); múltiplos itens
+        // soltos de uma vez seriam um caso de lote, fora do escopo aqui.
+        const file = files[0];
+        file.fileContent.text().then((text) => {
+          const extension = (file.name.split(".").pop() || "eml").toLowerCase();
+          const blob = new Blob([text], {
+            type: extension === "msg" ? "application/vnd.ms-outlook" : "message/rfc822"
+          });
+          setDroppedItem(blob, extension, file.name.replace(/\.(eml|msg)$/i, ""));
+        }).catch((e) => {
+          console.warn("[Vshare] Falha ao ler arquivo solto:", e.message);
+          showStatus("Não foi possível ler o e-mail solto.", "error");
+        });
+      }
+    },
+    (result) => {
+      if (result.status === Office.AsyncResultStatus.Failed) {
+        console.warn("[Vshare] Falha ao registrar DragAndDropEvent:", result.error.message);
+      }
+    }
+  );
+}
+
+// ── Drag-and-drop: HTML5 nativo (Desktop clássico / Mac) ──────────────
+// No Outlook Desktop clássico, o e-mail solto chega como arquivo .msg;
+// no Mac, como .eml. event.dataTransfer.files contém o arquivo real.
+function onDropZoneDragOver(event) {
+  event.preventDefault();
+  setDropZoneActive(true);
+}
+
+function onDropZoneDragLeave(event) {
+  setDropZoneActive(false);
+}
+
+function onDropZoneDrop(event) {
+  event.preventDefault();
+  setDropZoneActive(false);
+
+  const files = event.dataTransfer?.files;
+  if (!files || files.length === 0) return;
+
+  const file = files[0];
+  const extension = (file.name.split(".").pop() || "eml").toLowerCase();
+  if (extension !== "eml" && extension !== "msg") {
+    showStatus("Solte um e-mail (.eml ou .msg) na área indicada.", "error");
+    return;
+  }
+
+  const reader = new FileReader();
+  reader.onload = () => {
+    const blob = new Blob([reader.result], {
+      type: extension === "msg" ? "application/vnd.ms-outlook" : "message/rfc822"
+    });
+    setDroppedItem(blob, extension, file.name.replace(/\.(eml|msg)$/i, ""));
+  };
+  reader.onerror = () => {
+    showStatus("Não foi possível ler o e-mail solto.", "error");
+  };
+  reader.readAsArrayBuffer(file);
+}
+
+function setDropZoneActive(active) {
+  const zone = document.getElementById("emailPreview");
+  if (zone) zone.classList.toggle("dropzone-active", active);
+}
+
+function setDroppedItem(blob, extension, subject) {
+  droppedItem = { blob, extension, subject: subject || "email-anexado" };
+
+  const zone = document.getElementById("emailPreview");
+  if (zone) {
+    zone.classList.remove("dropzone-active");
+    zone.classList.add("dropzone-filled");
+  }
+  document.getElementById("previewSubject").textContent = droppedItem.subject;
+  document.getElementById("previewFrom").textContent = "Anexado por arrastar e soltar";
+  const hint = document.getElementById("dropHint");
+  if (hint) hint.classList.add("hidden");
+
+  showStatus("E-mail anexado. Selecione a pasta e clique em Arquivar.", "success");
+}
+
+function clearDroppedItem() {
+  droppedItem = null;
+  const zone = document.getElementById("emailPreview");
+  if (zone) zone.classList.remove("dropzone-filled");
+  const hint = document.getElementById("dropHint");
+  if (hint) hint.classList.remove("hidden");
 }
 
 // ── Estratégia de autenticação em 3 camadas ──────────────────
@@ -247,8 +367,9 @@ async function onLoggedIn() {
   currentItem = Office.context.mailbox.item; // pode ser undefined em modo multi-seleção
 
   // Não sobrescreve o preview se já estivermos em modo multi-seleção
-  // (detectado por registerMultiSelectHandler antes do login terminar).
-  if (!isMultiSelectMode) {
+  // (detectado por registerMultiSelectHandler antes do login terminar)
+  // ou se um e-mail já foi anexado por arrastar-e-soltar.
+  if (!isMultiSelectMode && !droppedItem) {
     document.getElementById("previewSubject").textContent =
       currentItem?.subject || "(sem assunto)";
     document.getElementById("previewFrom").textContent =
@@ -586,6 +707,9 @@ window.onSubFolderChange = onSubFolderChange;
 
 // ── Arquivamento ─────────────────────────────────────────────
 async function archiveEmail() {
+  if (droppedItem) {
+    return archiveEmailSingle();
+  }
   if (isMultiSelectMode && selectedMailItems.length > 1) {
     return archiveEmailBatch();
   }
@@ -615,7 +739,9 @@ async function archiveEmailSingle() {
   showStatus("Obtendo conteúdo do email...", "loading");
 
   try {
-    const { blob, extension } = await fetchEmailBlob();
+    const { blob, extension } = droppedItem
+      ? { blob: droppedItem.blob, extension: droppedItem.extension }
+      : await fetchEmailBlob();
 
     // Nome customizado (opcional) ou automático
     const customName = document.getElementById("customName")?.value.trim() || "";
@@ -625,8 +751,8 @@ async function archiveEmailSingle() {
       fileName = clean.toLowerCase().endsWith(`.${extension}`) ? clean : `${clean}.${extension}`;
     } else {
       const date    = getLocalDateString();
-      const subject = (currentItem.subject || "sem-assunto")
-        .replace(/[\/:*?"<>|]/g, "_").substring(0, 80);
+      const baseSubject = droppedItem ? droppedItem.subject : (currentItem.subject || "sem-assunto");
+      const subject = baseSubject.replace(/[\/:*?"<>|]/g, "_").substring(0, 80);
       fileName = `${date}_${subject}.${extension}`;
     }
 
@@ -640,6 +766,7 @@ async function archiveEmailSingle() {
     const nameEl = document.getElementById("customName");
     if (nameEl) nameEl.value = "";
     selectedResult = null;
+    if (droppedItem) clearDroppedItem();
   } catch (e) {
     showStatus("Erro ao arquivar: " + e.message, "error");
   } finally {
@@ -1058,6 +1185,7 @@ const I18N = {
     loginMsg:      "Faça login com sua conta Microsoft para arquivar emails no SharePoint.",
     loginBtn:      "Entrar com Microsoft",
     siteLabel:     "Biblioteca",
+    dropHint:      "ou arraste um e-mail aqui para anexar",
     searchPh:      "Buscar pasta...",
     emailSelected: "Email selecionado",
     rootFolder:    "Pasta principal",
@@ -1083,6 +1211,7 @@ const I18N = {
     loginMsg:      "Sign in with your Microsoft account to archive emails to SharePoint.",
     loginBtn:      "Sign in with Microsoft",
     siteLabel:     "Library",
+    dropHint:      "or drag an email here to attach",
     searchPh:      "Search folder...",
     emailSelected: "Selected email",
     rootFolder:    "Main folder",
