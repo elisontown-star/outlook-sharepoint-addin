@@ -5,7 +5,7 @@
   xmlns:bt="http://schemas.microsoft.com/office/officeappbasictypes/1.0"
   xsi:type="MailApp">
   <Id>c7e94f20-1a3b-4c5d-8e6f-9a0b1c2d3e4f</Id>
-  <Version>4.6.0</Version>
+  <Version>5.0.0</Version>
   <ProviderName>VtechIT</ProviderName>
   <DefaultLocale>pt-BR</DefaultLocale>
   <DisplayName DefaultValue="Vshare"/>
@@ -41,7 +41,7 @@
   <DisableEntityHighlighting>false</DisableEntityHighlighting>
   <VersionOverrides xmlns="http://schemas.microsoft.com/office/mailappversionoverrides" xmlns:bt="http://schemas.microsoft.com/office/officeappbasictypes/1.0" xsi:type="VersionOverridesV1_0">
     <Requirements>
-      <bt:Sets DefaultMinVersion="1.3">
+      <bt:Sets DefaultMinVersion="1.15">
         <bt:Set Name="Mailbox"/>
       </bt:Sets>
     </Requirements>
@@ -66,6 +66,9 @@
                   </Icon>
                   <Action xsi:type="ShowTaskpane">
                     <SourceLocation resid="Taskpane.Url"/>
+                    <SupportsPinning>true</SupportsPinning>
+                    <SupportsNoItemContext>true</SupportsNoItemContext>
+                    <SupportsMultiSelect>true</SupportsMultiSelect>
                   </Action>
                 </Control>
               </Group>

@@ -1,7 +1,7 @@
 // ============================================================
 //  Outlook Add-in — Vshare
-//  Autor: VtechIT  |  Versão: 4.9
-//  v4.9: seletor de múltiplas bibliotecas SharePoint
+//  Autor: VtechIT  |  Versão: 5.0
+//  v5.0: arquivamento em lote (seleção múltipla de e-mails)
 // ============================================================
 
 let msalInstance  = null;
@@ -11,6 +11,8 @@ let siteId        = null;
 let driveId       = null;
 let loggedAccount = null;
 let currentSiteIndex = 0;  // índice do site ativo em CONFIG.SITES
+let isMultiSelectMode = false;
+let selectedMailItems  = []; // itens retornados por getSelectedItemsAsync (modo multi)
 
 // ── Inicialização ────────────────────────────────────────────
 Office.onReady(async () => {
@@ -37,6 +39,7 @@ Office.onReady(async () => {
       accessToken   = redirectResult.accessToken;
       loggedAccount = redirectResult.account;
       await onLoggedIn();
+      registerMultiSelectHandler();
       return;
     }
   } catch (e) {
@@ -44,7 +47,64 @@ Office.onReady(async () => {
   }
 
   await tryAutoLogin();
+  registerMultiSelectHandler();
 });
+
+// ── Multi-seleção (Outlook Desktop clássico, com SupportsMultiSelect) ──
+function registerMultiSelectHandler() {
+  if (!Office.context.mailbox.addHandlerAsync) return;
+  Office.context.mailbox.addHandlerAsync(
+    Office.EventType.SelectedItemsChanged,
+    refreshSelectedItems,
+    (result) => {
+      if (result.status === Office.AsyncResultStatus.Failed) {
+        console.warn("[Vshare] Falha ao registrar SelectedItemsChanged:", result.error.message);
+        return;
+      }
+      refreshSelectedItems();
+    }
+  );
+}
+
+function refreshSelectedItems() {
+  if (!Office.context.mailbox.getSelectedItemsAsync) return;
+  Office.context.mailbox.getSelectedItemsAsync((asyncResult) => {
+    if (asyncResult.status === Office.AsyncResultStatus.Failed) {
+      console.warn("[Vshare] getSelectedItemsAsync falhou:", asyncResult.error.message);
+      return;
+    }
+    const items = asyncResult.value || [];
+    selectedMailItems = items;
+    isMultiSelectMode = items.length > 1;
+    updateMultiSelectUI();
+  });
+}
+
+function updateMultiSelectUI() {
+  const banner = document.getElementById("multiSelectBanner");
+  if (!banner) return;
+
+  if (isMultiSelectMode) {
+    banner.style.display = "flex";
+    document.getElementById("multiSelectCount").textContent = selectedMailItems.length;
+    document.getElementById("previewSubject").textContent =
+      `${selectedMailItems.length} e-mails selecionados`;
+    document.getElementById("previewFrom").textContent = "Arquivamento em lote";
+    // Renomear individual não se aplica em lote
+    const nameField = document.getElementById("customNameField");
+    if (nameField) nameField.style.display = "none";
+  } else {
+    banner.style.display = "none";
+    const nameField = document.getElementById("customNameField");
+    if (nameField) nameField.style.display = "";
+    if (currentItem) {
+      document.getElementById("previewSubject").textContent =
+        currentItem.subject || "(sem assunto)";
+      document.getElementById("previewFrom").textContent =
+        "De: " + (currentItem.from?.emailAddress || "—");
+    }
+  }
+}
 
 // ── Estratégia de autenticação em 3 camadas ──────────────────
 // 1ª: SSO nativo do Office (usa a sessão já logada no Outlook — sem popup)
@@ -170,6 +230,12 @@ async function onLoggedIn() {
   document.getElementById("userBar").style.display = "flex";
   document.getElementById("logoutBtn").style.display = "flex";
 
+  // ── Checagem de licença (backend VtechIT) ──────────────────
+  const licenseOk = await checkLicense(email);
+  if (!licenseOk) {
+    return; // checkLicense já exibe o aviso de bloqueio e interrompe o fluxo
+  }
+
   currentItem = Office.context.mailbox.item;
   document.getElementById("previewSubject").textContent =
     currentItem.subject || "(sem assunto)";
@@ -196,6 +262,59 @@ async function onLoggedIn() {
 
   await loadSiteAndDrive();
   await loadRootFolders();
+}
+
+// ── Checagem de licença ──────────────────────────────────────
+// Consulta o backend de licenciamento da VtechIT (Azure Functions).
+// Retorna true se o uso está liberado; caso contrário, exibe o aviso
+// de bloqueio na própria tela de login e retorna false.
+async function checkLicense(email) {
+  const endpoint = CONFIG.LICENSING_ENDPOINT;
+  const functionKey = CONFIG.LICENSING_KEY;
+
+  // Se o endpoint não estiver configurado, não bloqueia (compatibilidade
+  // com ambientes/clientes que ainda não usam o controle de licença).
+  if (!endpoint) {
+    return true;
+  }
+
+  try {
+    const resp = await fetch(`${endpoint}?code=${encodeURIComponent(functionKey || "")}`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ tenantId: CONFIG.TENANT_ID, email })
+    });
+    const data = await resp.json();
+
+    if (data.allowed) {
+      return true;
+    }
+
+    showLicenseBlocked(data.reason);
+    return false;
+  } catch (e) {
+    // Falha de rede ao checar licença: por segurança, bloqueia e avisa,
+    // em vez de liberar acesso silenciosamente.
+    showLicenseBlocked("connection_error");
+    return false;
+  }
+}
+
+function showLicenseBlocked(reason) {
+  document.getElementById("folderSection").style.display = "none";
+  document.getElementById("userBar").style.display = "none";
+  document.getElementById("logoutBtn").style.display = "none";
+
+  const messages = {
+    unknown_tenant:      "Este ambiente não está habilitado para o Vshare. Contate o suporte VtechIT.",
+    plan_suspended:       "O plano deste cliente está suspenso. Contate o administrador.",
+    seat_limit_reached:   "Limite de usuários licenciados atingido. Contate o administrador para liberar mais assentos.",
+    user_revoked:         "Seu acesso ao Vshare foi revogado. Contate o administrador.",
+    connection_error:     "Não foi possível verificar a licença (sem conexão com o servidor). Tente novamente em alguns instantes.",
+  };
+  const text = messages[reason] || "Acesso não autorizado.";
+
+  showStatus(text, "error");
 }
 
 // ── Logout ───────────────────────────────────────────────────
@@ -449,6 +568,13 @@ window.onSubFolderChange = onSubFolderChange;
 
 // ── Arquivamento ─────────────────────────────────────────────
 async function archiveEmail() {
+  if (isMultiSelectMode && selectedMailItems.length > 1) {
+    return archiveEmailBatch();
+  }
+  return archiveEmailSingle();
+}
+
+async function archiveEmailSingle() {
   // Prioriza pasta selecionada via busca; senão usa os selects normais
   let targetFolderId;
 
@@ -502,6 +628,134 @@ async function archiveEmail() {
     btn.innerHTML = "Arquivar";
     btn.disabled  = false;
   }
+}
+
+// ── Arquivamento em lote (multi-seleção) ──────────────────────
+// Processa um e-mail por vez via loadItemByIdAsync/unloadAsync,
+// conforme exigido pela API de item multi-select (máx. sequencial).
+async function archiveEmailBatch() {
+  let targetFolderId;
+  if (selectedResult) {
+    targetFolderId = selectedResult.id;
+  } else {
+    const rootId   = document.getElementById("rootFolder").value;
+    const subId    = document.getElementById("subFolder").value;
+    const subSubEl = document.getElementById("subSubFolder");
+    const subSubId = subSubEl ? subSubEl.value : "";
+    if (!rootId) {
+      showStatus("Selecione uma pasta antes de arquivar.", "error");
+      return;
+    }
+    targetFolderId = subSubId || subId || rootId;
+  }
+
+  const btn = document.getElementById("archiveBtn");
+  btn.disabled = true;
+
+  const total = selectedMailItems.length;
+  let success = 0;
+  let failed  = 0;
+
+  for (let i = 0; i < total; i++) {
+    const item = selectedMailItems[i];
+    btn.innerHTML = `<span class="loader"></span>Arquivando ${i + 1}/${total}...`;
+    showStatus(`Arquivando email ${i + 1} de ${total}...`, "loading");
+
+    try {
+      const { blob, extension, subject } = await fetchEmailBlobById(item.itemId);
+      const date = getLocalDateString();
+      const cleanSubject = (subject || "sem-assunto")
+        .replace(/[\/:*?"<>|]/g, "_").substring(0, 80);
+      const fileName = `${date}_${cleanSubject}.${extension}`;
+
+      await graphPut(
+        `/drives/${driveId}/items/${targetFolderId}:/${encodeURIComponent(fileName)}:/content`,
+        blob
+      );
+      success++;
+    } catch (e) {
+      console.warn("[Vshare] Falha ao arquivar item em lote:", e.message);
+      failed++;
+    }
+  }
+
+  btn.innerHTML = "Arquivar";
+  btn.disabled  = false;
+
+  if (failed === 0) {
+    showStatus(`${success} emails arquivados com sucesso.`, "success");
+  } else {
+    showStatus(`${success} arquivados, ${failed} falharam. Verifique e tente novamente.`, "error");
+  }
+}
+
+// ── Obtém o blob de um email pelo itemId (modo multi-seleção) ──
+async function fetchEmailBlobById(itemId) {
+  return new Promise((resolve, reject) => {
+    Office.context.mailbox.loadItemByIdAsync(itemId, async (result) => {
+      if (result.status === Office.AsyncResultStatus.Failed) {
+        reject(new Error(result.error.message));
+        return;
+      }
+
+      const loadedItem = result.value;
+      const subject = loadedItem.subject || "sem-assunto";
+
+      try {
+        const restId = Office.context.mailbox.convertToRestId
+          ? Office.context.mailbox.convertToRestId(itemId, Office.MailboxEnums.RestVersion.v2_0)
+          : itemId;
+
+        const token = await getValidToken();
+        const res = await fetch(
+          `https://graph.microsoft.com/v1.0/me/messages/${restId}/$value`,
+          { headers: { Authorization: "Bearer " + token } }
+        );
+
+        let blob, extension;
+        if (res.ok) {
+          blob = await res.blob();
+          extension = "eml";
+        } else {
+          const fallback = await buildFallbackEmailFromLoadedItem(loadedItem);
+          blob = fallback.blob;
+          extension = fallback.extension;
+        }
+
+        loadedItem.unloadAsync((unloadResult) => {
+          if (unloadResult.status === Office.AsyncResultStatus.Failed) {
+            console.warn("[Vshare] unloadAsync falhou:", unloadResult.error.message);
+          }
+          resolve({ blob, extension, subject });
+        });
+      } catch (e) {
+        loadedItem.unloadAsync(() => reject(e));
+      }
+    });
+  });
+}
+
+// ── Fallback EML a partir de um item carregado via loadItemByIdAsync ──
+async function buildFallbackEmailFromLoadedItem(loadedItem) {
+  const body = await new Promise(resolve => {
+    loadedItem.body.getAsync(Office.CoercionType.Html, result => {
+      resolve(
+        result.status === Office.AsyncResultStatus.Succeeded
+          ? result.value : "(corpo não disponível)"
+      );
+    });
+  });
+
+  const from    = loadedItem.from ? `${loadedItem.from.displayName} <${loadedItem.from.emailAddress}>` : "";
+  const subject = loadedItem.subject || "(sem assunto)";
+  const date    = new Date().toUTCString();
+  const toList  = (loadedItem.to || []).map(r => `${r.displayName} <${r.emailAddress}>`).join(", ");
+
+  const eml = [`From: ${from}`, `To: ${toList}`, `Subject: ${subject}`,
+    `Date: ${date}`, `MIME-Version: 1.0`, `Content-Type: text/html; charset=utf-8`, ``, body
+  ].join("\r\n");
+
+  return { blob: new Blob([eml], { type: "message/rfc822" }), extension: "eml" };
 }
 
 // ── Data local (fuso Brasil) ─────────────────────────────────
