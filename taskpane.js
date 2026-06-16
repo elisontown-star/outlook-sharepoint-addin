@@ -1,6 +1,9 @@
 // ============================================================
 //  Outlook Add-in — Vshare
-//  Autor: VtechIT  |  Versão: 5.0
+//  Autor: VtechIT  |  Versão: 5.0.1
+//  v5.0.1: corrige timing do handler de multi-seleção (registrava após
+//  o login, perdendo o evento inicial) e onLoggedIn sobrescrevendo o
+//  preview de multi-seleção com dados do item único
 //  v5.0: arquivamento em lote (seleção múltipla de e-mails)
 // ============================================================
 
@@ -16,6 +19,13 @@ let selectedMailItems  = []; // itens retornados por getSelectedItemsAsync (modo
 
 // ── Inicialização ────────────────────────────────────────────
 Office.onReady(async () => {
+  // Registra o handler de multi-seleção IMEDIATAMENTE, antes de qualquer
+  // lógica de autenticação. Se isso só rodar depois do login (que é
+  // assíncrono e pode demorar), o primeiro evento SelectedItemsChanged —
+  // disparado já na abertura do painel quando há vários itens
+  // selecionados — pode passar batido e a UI nunca reflete o modo lote.
+  registerMultiSelectHandler();
+
   msalInstance = new msal.PublicClientApplication({
     auth: {
       clientId:    CONFIG.CLIENT_ID,
@@ -39,7 +49,6 @@ Office.onReady(async () => {
       accessToken   = redirectResult.accessToken;
       loggedAccount = redirectResult.account;
       await onLoggedIn();
-      registerMultiSelectHandler();
       return;
     }
   } catch (e) {
@@ -47,7 +56,6 @@ Office.onReady(async () => {
   }
 
   await tryAutoLogin();
-  registerMultiSelectHandler();
 });
 
 // ── Multi-seleção (Outlook Desktop clássico, com SupportsMultiSelect) ──
@@ -236,11 +244,16 @@ async function onLoggedIn() {
     return; // checkLicense já exibe o aviso de bloqueio e interrompe o fluxo
   }
 
-  currentItem = Office.context.mailbox.item;
-  document.getElementById("previewSubject").textContent =
-    currentItem.subject || "(sem assunto)";
-  document.getElementById("previewFrom").textContent =
-    "De: " + (currentItem.from?.emailAddress || "—");
+  currentItem = Office.context.mailbox.item; // pode ser undefined em modo multi-seleção
+
+  // Não sobrescreve o preview se já estivermos em modo multi-seleção
+  // (detectado por registerMultiSelectHandler antes do login terminar).
+  if (!isMultiSelectMode) {
+    document.getElementById("previewSubject").textContent =
+      currentItem?.subject || "(sem assunto)";
+    document.getElementById("previewFrom").textContent =
+      "De: " + (currentItem?.from?.emailAddress || "—");
+  }
 
   // Preenche e exibe o seletor de site (só se houver mais de 1)
   const sites = CONFIG.SITES || [];
@@ -262,6 +275,11 @@ async function onLoggedIn() {
 
   await loadSiteAndDrive();
   await loadRootFolders();
+
+  // Reconfirma o estado de seleção agora que o login terminou — cobre o
+  // caso em que o evento SelectedItemsChanged disparou durante o login
+  // e a UI de pastas (recém carregada) precisa refletir o modo lote.
+  refreshSelectedItems();
 }
 
 // ── Checagem de licença ──────────────────────────────────────
